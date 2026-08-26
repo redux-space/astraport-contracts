@@ -93,6 +93,8 @@ pub enum Error {
     InvalidRolloutPercentage = 15,
     /// Migration between these versions has already been recorded.
     MigrationAlreadyRecorded = 16,
+    /// Contract was initialized previously.
+    AlreadyInitialized = 17,
 }
 
 // ---------------------------------------------------------------------------
@@ -114,9 +116,9 @@ impl VersioningContract {
     /// Sets the approval threshold to 1 (single-admin by default). Additional
     /// signers and a higher threshold should be configured afterward via
     /// `add_signer` and `set_approval_threshold`.
-    pub fn initialize(env: Env, admin: Address) -> Symbol {
+    pub fn initialize(env: Env, admin: Address) -> Result<Symbol, Error> {
         if env.storage().persistent().has(&VersionStorageKey::Admin) {
-            panic!("already initialized");
+            return Err(Error::AlreadyInitialized);
         }
         env.storage()
             .persistent()
@@ -146,7 +148,7 @@ impl VersioningContract {
         env.storage()
             .persistent()
             .set(&VersionStorageKey::FrozenVersions, &Vec::<u32>::new(&env));
-        OK
+        Ok(OK)
     }
 
     /// Return the current admin address.
@@ -164,7 +166,6 @@ impl VersioningContract {
     /// Add a signer to the multi-sig set. Admin-only.
     pub fn add_signer(env: Env, admin: Address, signer: Address) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         let mut signers: Vec<Address> = env
             .storage()
@@ -172,9 +173,11 @@ impl VersioningContract {
             .get(&VersionStorageKey::Signers)
             .unwrap_or_else(|| Vec::new(&env));
 
-        // Prevent duplicates.
-        if signers.contains(&signer) {
-            return Ok(OK); // Already a signer, no-op.
+        // Prevent duplicates without relying on host-side vector search.
+        for existing in signers.iter() {
+            if existing == signer {
+                return Ok(OK);
+            }
         }
 
         signers.push_back(signer);
@@ -187,20 +190,22 @@ impl VersioningContract {
     /// Remove a signer. Admin-only.
     pub fn remove_signer(env: Env, admin: Address, signer: Address) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
-        let mut signers: Vec<Address> = env
+        let signers: Vec<Address> = env
             .storage()
             .persistent()
             .get(&VersionStorageKey::Signers)
             .unwrap_or_else(|| Vec::new(&env));
 
-        if let Some(idx) = signers.first_index_of(&signer) {
-            signers.remove(idx);
-            env.storage()
-                .persistent()
-                .set(&VersionStorageKey::Signers, &signers);
+        let mut remaining = Vec::new(&env);
+        for existing in signers.iter() {
+            if existing != signer {
+                remaining.push_back(existing);
+            }
         }
+        env.storage()
+            .persistent()
+            .set(&VersionStorageKey::Signers, &remaining);
 
         Ok(OK)
     }
@@ -212,7 +217,6 @@ impl VersioningContract {
         threshold: u32,
     ) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         if threshold == 0 {
             return Err(Error::InsufficientApprovals);
@@ -269,7 +273,6 @@ impl VersioningContract {
         description: Symbol,
     ) -> Result<u32, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         let all_versions: Vec<u32> = env
             .storage()
@@ -352,7 +355,6 @@ impl VersioningContract {
     /// Creates a new [`UpgradeProposal`] and returns its id.
     pub fn propose_upgrade(env: Env, admin: Address, target_version: u32) -> Result<u64, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         // Validate the target version exists.
         let meta: Option<VersionMetadata> = env
@@ -375,7 +377,11 @@ impl VersioningContract {
             target_version,
             proposer: admin.clone(),
             created_at: now,
-            approvals: Vec::new(&env),
+            approvals: {
+                let mut approvals = Vec::new(&env);
+                approvals.push_back(admin.clone());
+                approvals
+            },
             executed: false,
             rejected: false,
         };
@@ -514,7 +520,6 @@ impl VersioningContract {
     /// Reject an upgrade proposal. Admin-only.
     pub fn reject_upgrade(env: Env, admin: Address, proposal_id: u64) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         let mut proposal: UpgradeProposal = env
             .storage()
@@ -578,7 +583,6 @@ impl VersioningContract {
     /// before the current one (status `Superseded`).
     pub fn rollback(env: Env, admin: Address, target_version: u32) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         let current_version: u32 = env
             .storage()
@@ -628,7 +632,6 @@ impl VersioningContract {
         description: Symbol,
     ) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         if status == FeatureFlagStatus::GradualRollout && rollout_percentage > 100 {
             return Err(Error::InvalidRolloutPercentage);
@@ -728,7 +731,6 @@ impl VersioningContract {
     /// Admin-only. Cannot freeze the currently active version.
     pub fn freeze_version(env: Env, admin: Address, version_number: u32) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
 
         let mut meta: VersionMetadata = env
             .storage()
@@ -892,7 +894,6 @@ impl VersioningContract {
     /// Configure the audit-log sink address. Admin-only.
     pub fn set_audit_sink(env: Env, admin: Address, sink: Address) -> Result<Symbol, Error> {
         Self::assert_admin(&env, &admin)?;
-        admin.require_auth();
         env.storage()
             .persistent()
             .set(&VersionStorageKey::AuditSink, &sink);

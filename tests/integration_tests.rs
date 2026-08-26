@@ -1185,3 +1185,346 @@ mod emergency_integration_tests {
         assert_eq!(EmergencyControls::validate_trade_size(env, 500_000_000), 500_000_000);
     }
 }
+
+// ============================================================================
+// Asset Management Integration Tests
+// ============================================================================
+
+#[cfg(test)]
+mod asset_integration_tests {
+    use astraport_asset::{
+        Asset, AssetManagementContract, AssetType, RiskLevel,
+    };
+    use soroban_sdk::{symbol_short, Address, Env};
+
+    const SCALE: i128 = 1_000_000_000_000_000_000;
+
+    fn setup() -> (Env, Address) {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        env.mock_all_auths();
+        AssetManagementContract::initialize(env.clone(), admin.clone());
+        (env, admin)
+    }
+
+    fn make_asset(symbol: &str, name: &str, balance: i128) -> Asset {
+        Asset {
+            symbol: symbol_short!(symbol),
+            asset_type: AssetType::Token,
+            contract_address: Address::generate(&Env::default()),
+            balance,
+            name: symbol_short!(name),
+            decimals: 8,
+            risk_level: RiskLevel::Medium,
+            is_active: true,
+        }
+    }
+
+    /// Full asset lifecycle: add, query, update price, calculate value, remove.
+    #[test]
+    fn test_full_asset_lifecycle() {
+        let (env, admin) = setup();
+        let pid = symbol_short!("PORT_A");
+        let source = symbol_short!("oracle");
+
+        // 1. Add multiple assets
+        let xlm = make_asset("XLM", "Stellar", 1000 * SCALE);
+        let usdc = make_asset("USDC", "USD Coin", 500 * SCALE);
+        let btc = make_asset("BTC", "Bitcoin", 5 * SCALE);
+
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), xlm);
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), usdc);
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), btc);
+
+        // 2. Verify all assets exist
+        let assets = AssetManagementContract::get_portfolio_assets(env.clone(), pid.clone());
+        assert_eq!(assets.len(), 3);
+
+        // 3. Set prices
+        AssetManagementContract::set_asset_price(
+            env.clone(), admin.clone(), symbol_short!("XLM"), SCALE, source.clone(),
+        );
+        AssetManagementContract::set_asset_price(
+            env.clone(), admin.clone(), symbol_short!("USDC"), SCALE, source.clone(),
+        );
+        AssetManagementContract::set_asset_price(
+            env.clone(), admin.clone(), symbol_short!("BTC"), 60_000 * SCALE, source.clone(),
+        );
+
+        // 4. Verify individual asset values
+        let xlm_value = AssetManagementContract::get_asset_value(
+            env.clone(), pid.clone(), symbol_short!("XLM"),
+        );
+        assert_eq!(xlm_value, Some(1000 * SCALE));
+
+        let btc_value = AssetManagementContract::get_asset_value(
+            env.clone(), pid.clone(), symbol_short!("BTC"),
+        );
+        assert_eq!(btc_value, Some(5 * 60_000 * SCALE));
+
+        // 5. Verify portfolio total value
+        let total = AssetManagementContract::get_portfolio_value(env.clone(), pid.clone());
+        // XLM: 1000*SCALE + USDC: 500*SCALE + BTC: 300000*SCALE = 301500*SCALE
+        assert_eq!(total, 301_500 * SCALE);
+
+        // 6. Update a balance
+        AssetManagementContract::update_asset_balance(
+            env.clone(), admin.clone(), pid.clone(), symbol_short!("XLM"), 2000 * SCALE,
+        );
+        let updated_total = AssetManagementContract::get_portfolio_value(env.clone(), pid.clone());
+        assert_eq!(updated_total, 302_500 * SCALE);
+
+        // 7. Get portfolio summary
+        let summary = AssetManagementContract::get_portfolio_summary(env.clone(), pid.clone()).unwrap();
+        assert_eq!(summary.asset_count, 3);
+        assert_eq!(summary.active_asset_count, 3);
+        assert_eq!(summary.total_value, 302_500 * SCALE);
+
+        // 8. Zero balance and remove
+        AssetManagementContract::update_asset_balance(
+            env.clone(), admin.clone(), pid.clone(), symbol_short!("XLM"), 0,
+        );
+        AssetManagementContract::remove_asset(
+            env.clone(), admin.clone(), pid.clone(), symbol_short!("XLM"),
+        );
+        assert_eq!(
+            AssetManagementContract::get_asset_count(env.clone(), pid.clone()), 2
+        );
+    }
+
+    /// Add assets across multiple portfolios.
+    #[test]
+    fn test_multi_portfolio_assets() {
+        let (env, admin) = setup();
+        let pid_a = symbol_short!("PORT_A");
+        let pid_b = symbol_short!("PORT_B");
+
+        let xlm = make_asset("XLM", "Stellar", 1000 * SCALE);
+        let mut usdc = make_asset("USDC", "USD Coin", 500 * SCALE);
+        usdc.risk_level = RiskLevel::Low;
+
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid_a.clone(), xlm.clone());
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid_b.clone(), usdc);
+
+        // Portfolios should be independent
+        let assets_a = AssetManagementContract::get_portfolio_assets(env.clone(), pid_a.clone());
+        let assets_b = AssetManagementContract::get_portfolio_assets(env.clone(), pid_b.clone());
+        assert_eq!(assets_a.len(), 1);
+        assert_eq!(assets_b.len(), 1);
+        assert_eq!(assets_a.get(0).unwrap().symbol, symbol_short!("XLM"));
+        assert_eq!(assets_b.get(0).unwrap().symbol, symbol_short!("USDC"));
+
+        // Both portfolios registered
+        let portfolios = AssetManagementContract::get_all_portfolios(env.clone());
+        assert_eq!(portfolios.len(), 2);
+    }
+
+    /// Add and remove assets with different risk levels and types.
+    #[test]
+    fn test_asset_metadata_variety() {
+        let (env, admin) = setup();
+        let pid = symbol_short!("PORT1");
+
+        // Low-risk token
+        let mut usdc = make_asset("USDC", "USD Coin", 0);
+        usdc.risk_level = RiskLevel::Low;
+        usdc.decimals = 6;
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), usdc);
+
+        // High-risk derivative
+        let call_option = Asset {
+            symbol: symbol_short!("CALL"),
+            asset_type: AssetType::Derivative,
+            contract_address: Address::generate(&env),
+            balance: 100,
+            name: symbol_short!("CallOpt"),
+            decimals: 0,
+            risk_level: RiskLevel::High,
+            is_active: true,
+        };
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), call_option);
+
+        // Very high risk token
+        let mut shib = make_asset("SHIB", "Shiba Inu", 0);
+        shib.risk_level = RiskLevel::VeryHigh;
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), shib);
+
+        let assets = AssetManagementContract::get_portfolio_assets(env.clone(), pid.clone());
+        assert_eq!(assets.len(), 3);
+
+        // Verify metadata
+        let call = AssetManagementContract::get_asset(
+            env.clone(), pid.clone(), symbol_short!("CALL"),
+        ).unwrap();
+        assert_eq!(call.asset_type, AssetType::Derivative);
+        assert_eq!(call.risk_level, RiskLevel::High);
+        assert_eq!(call.decimals, 0);
+    }
+
+    /// Validate all safety checks: non-zero balance, duplicate, not found.
+    #[test]
+    fn test_safety_checks_comprehensive() {
+        let (env, admin) = setup();
+        let pid = symbol_short!("PORT1");
+
+        let xlm = make_asset("XLM", "Stellar", 100 * SCALE);
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), xlm);
+
+        // Cannot remove with non-zero balance
+        assert_eq!(
+            AssetManagementContract::try_remove_asset(
+                &env, &admin, &pid, &symbol_short!("XLM"),
+            ),
+            Err(Ok(astraport_asset::AssetError::NonZeroBalance)),
+        );
+
+        // Cannot add duplicate
+        let xlm2 = make_asset("XLM", "Stellar", 0);
+        assert_eq!(
+            AssetManagementContract::try_add_asset(&env, &admin, &pid, &xlm2),
+            Err(Ok(astraport_asset::AssetError::AssetAlreadyExists)),
+        );
+
+        // Cannot update nonexistent asset
+        assert_eq!(
+            AssetManagementContract::try_update_asset_balance(
+                &env, &admin, &pid, &symbol_short!("FAKE"), &0,
+            ),
+            Err(Ok(astraport_asset::AssetError::AssetNotFound)),
+        );
+
+        // Cannot remove nonexistent asset
+        assert_eq!(
+            AssetManagementContract::try_remove_asset(
+                &env, &admin, &pid, &symbol_short!("FAKE"),
+            ),
+            Err(Ok(astraport_asset::AssetError::AssetNotFound)),
+        );
+    }
+
+    /// Price feed integration: set prices, compute values, update prices.
+    #[test]
+    fn test_price_feed_integration() {
+        let (env, admin) = setup();
+        let pid = symbol_short!("PORT1");
+        let source = symbol_short!("oracle");
+
+        let xlm = make_asset("XLM", "Stellar", 10_000);
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), xlm);
+
+        // No price initially → value is None
+        let val = AssetManagementContract::get_asset_value(
+            env.clone(), pid.clone(), symbol_short!("XLM"),
+        );
+        assert_eq!(val, None);
+
+        // Set price
+        AssetManagementContract::set_asset_price(
+            env.clone(), admin.clone(), symbol_short!("XLM"), 2 * SCALE, source.clone(),
+        );
+        let price = AssetManagementContract::get_asset_price(env.clone(), symbol_short!("XLM")).unwrap();
+        assert_eq!(price.price, 2 * SCALE);
+        assert_eq!(price.source, symbol_short!("oracle"));
+
+        // Value = 10_000 * 2 * SCALE
+        let val = AssetManagementContract::get_asset_value(
+            env.clone(), pid.clone(), symbol_short!("XLM"),
+        );
+        assert_eq!(val, Some(20_000 * SCALE));
+
+        // Update price to 3 * SCALE
+        AssetManagementContract::set_asset_price(
+            env.clone(), admin.clone(), symbol_short!("XLM"), 3 * SCALE, source,
+        );
+        let val = AssetManagementContract::get_asset_value(
+            env.clone(), pid.clone(), symbol_short!("XLM"),
+        );
+        assert_eq!(val, Some(30_000 * SCALE));
+    }
+
+    /// Active vs inactive asset filtering.
+    #[test]
+    fn test_active_asset_filtering() {
+        let (env, admin) = setup();
+        let pid = symbol_short!("PORT1");
+
+        let mut active = make_asset("XLM", "Stellar", 1000);
+        active.is_active = true;
+        let mut inactive = make_asset("USDC", "USD Coin", 500);
+        inactive.is_active = false;
+
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), active);
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), inactive);
+
+        let all_assets = AssetManagementContract::get_portfolio_assets(env.clone(), pid.clone());
+        assert_eq!(all_assets.len(), 2);
+
+        let active_assets = AssetManagementContract::get_active_assets(env.clone(), pid.clone());
+        assert_eq!(active_assets.len(), 1);
+        assert_eq!(active_assets.get(0).unwrap().symbol, symbol_short!("XLM"));
+    }
+
+    /// Portfolio summary with mixed prices and active states.
+    #[test]
+    fn test_portfolio_summary_mixed() {
+        let (env, admin) = setup();
+        let pid = symbol_short!("PORT1");
+        let source = symbol_short!("oracle");
+
+        let mut xlm = make_asset("XLM", "Stellar", 1000 * SCALE);
+        let mut usdc = make_asset("USDC", "USD Coin", 500 * SCALE);
+        usdc.is_active = false;
+
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), xlm);
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), usdc);
+
+        // Only set price for XLM
+        AssetManagementContract::set_asset_price(
+            env.clone(), admin.clone(), symbol_short!("XLM"), SCALE, source,
+        );
+
+        let summary = AssetManagementContract::get_portfolio_summary(env.clone(), pid.clone()).unwrap();
+        assert_eq!(summary.asset_count, 2);
+        assert_eq!(summary.active_asset_count, 1); // only XLM is active
+        assert_eq!(summary.total_value, 1000 * SCALE); // only XLM has a price
+    }
+
+    /// Non-admin caller is rejected.
+    #[test]
+    fn test_non_admin_rejected() {
+        let (env, _admin) = setup();
+        let pid = symbol_short!("PORT1");
+        let non_admin = Address::generate(&env);
+        let asset = make_asset("XLM", "Stellar", 0);
+
+        assert_eq!(
+            AssetManagementContract::try_add_asset(&env, &non_admin, &pid, &asset),
+            Err(Ok(astraport_asset::AssetError::Unauthorized)),
+        );
+    }
+
+    /// Full remove workflow: add → set zero balance → remove.
+    #[test]
+    fn test_full_remove_workflow() {
+        let (env, admin) = setup();
+        let pid = symbol_short!("PORT1");
+
+        let asset = make_asset("XLM", "Stellar", 500 * SCALE);
+        AssetManagementContract::add_asset(env.clone(), admin.clone(), pid.clone(), asset);
+        assert_eq!(AssetManagementContract::get_asset_count(env.clone(), pid.clone()), 1);
+
+        // Zero the balance first
+        AssetManagementContract::update_asset_balance(
+            env.clone(), admin.clone(), pid.clone(), symbol_short!("XLM"), 0,
+        );
+
+        // Now we can remove
+        AssetManagementContract::remove_asset(
+            env.clone(), admin.clone(), pid.clone(), symbol_short!("XLM"),
+        );
+        assert_eq!(AssetManagementContract::get_asset_count(env.clone(), pid.clone()), 0);
+        assert!(AssetManagementContract::get_asset(
+            env.clone(), pid.clone(), symbol_short!("XLM"),
+        ).is_none());
+    }
+}

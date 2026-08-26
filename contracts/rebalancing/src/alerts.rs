@@ -170,8 +170,8 @@ pub struct AlertThreshold {
     pub trigger_value: i128,
     /// Severity to assign when this threshold fires.
     pub severity: AlertSeverity,
-    /// The asset this threshold applies to; `None` for portfolio-wide metrics.
-    pub asset: Option<Symbol>,
+    /// The asset this threshold applies to; `symbol_short!("*")` for portfolio-wide metrics.
+    pub asset: Symbol,
     /// Human-readable label (max 32 bytes recommended).
     pub label: String,
     /// When `false` the threshold is skipped during evaluation.
@@ -222,8 +222,8 @@ pub const MAX_THRESHOLDS_PER_CONFIG: u32 = 32;
 pub struct MetricObservation {
     /// Which metric this reading is for.
     pub metric: MetricType,
-    /// The asset the reading is for; `None` for portfolio-wide metrics.
-    pub asset: Option<Symbol>,
+    /// The asset the reading is for; `symbol_short!("*")` for portfolio-wide metrics.
+    pub asset: Symbol,
     /// The observed value (interpretation depends on `metric`).
     pub value: i128,
 }
@@ -243,8 +243,8 @@ pub struct AlertEvent {
     pub portfolio_id: Symbol,
     /// Which metric fired.
     pub metric: MetricType,
-    /// The asset the alert concerns; `None` for portfolio-wide metrics.
-    pub asset: Option<Symbol>,
+    /// The asset the alert concerns; `symbol_short!("*")` for portfolio-wide metrics.
+    pub asset: Symbol,
     /// The comparison that was breached.
     pub comparison: Comparison,
     /// Severity of the fired alert.
@@ -278,8 +278,8 @@ pub struct AlertHistoryEntry {
     pub index: u32,
     /// Which metric fired.
     pub metric: MetricType,
-    /// The asset the alert concerns; `None` for portfolio-wide metrics.
-    pub asset: Option<Symbol>,
+    /// The asset the alert concerns; `symbol_short!("*")` for portfolio-wide metrics.
+    pub asset: Symbol,
     /// The comparison that was breached.
     pub comparison: Comparison,
     /// Severity at the time the alert fired.
@@ -540,11 +540,11 @@ impl<'a> AlertMonitor<'a> {
     fn find_observation(
         observations: &Vec<MetricObservation>,
         metric: MetricType,
-        asset: &Option<Symbol>,
+        asset: &Symbol,
     ) -> Option<i128> {
         for i in 0..observations.len() {
             let obs = observations.get(i).unwrap();
-            if obs.metric == metric && &obs.asset == asset {
+            if obs.metric == metric && obs.asset == *asset {
                 return Some(obs.value);
             }
         }

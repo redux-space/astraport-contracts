@@ -333,16 +333,23 @@ impl PriceFeedContract {
         let mut responses = Vec::new(&env);
 
         for req in requests.iter() {
-            let method = req
-                .method_override
-                .clone()
-                .unwrap_or_else(|| price_validation::get_default_aggregation_method(&env));
+            let method = req.method_override.clone();
 
             let result = Self::get_price_with_method(env.clone(), req.asset.clone(), method);
+            let found = result.is_ok();
+            let price = result.unwrap_or(AggregatedPrice {
+                asset: req.asset.clone(),
+                price: 0,
+                timestamp: 0,
+                num_sources: 0,
+                method: AggregationMethod::Median,
+                status: PriceStatus::Unknown,
+            });
 
             let response = BatchPriceResponse {
                 asset: req.asset.clone(),
-                price: result.ok(),
+                price,
+                found,
             };
             responses.push_back(response);
         }

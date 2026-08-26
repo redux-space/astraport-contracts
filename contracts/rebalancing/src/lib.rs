@@ -15,9 +15,7 @@ pub mod records;
 use crate::rbac::{
     assign_role, check_permission, check_permission_detailed, describe_permissions,
     extend_role_expiry, get_access_log, get_raw_assignment, get_role_assignment, has_permission,
-    log_access, revoke_all_roles, revoke_role, RbacStorageKey, Role, RoleAssignment,
-    ALL_PERMISSIONS, CAN_CONFIGURE, CAN_LIQUIDATE, CAN_MANAGE_ROLES, CAN_MANAGE_SCHEDULE,
-    CAN_MODIFY_ALLOCATIONS, CAN_REBALANCE, CAN_VIEW,
+    revoke_all_roles, revoke_role, Role, RoleAssignment, CAN_MANAGE_ROLES,
 };
 
 /// Default tolerance used when deciding whether a holding needs rebalancing.
@@ -251,7 +249,7 @@ impl RebalancingContract {
         actor: &Address,
         portfolio_id: &Symbol,
         required_permission: u32,
-        action: &Symbol,
+        _action: &Symbol,
     ) -> Result<(), RebalancingError> {
         // First, try owner auth (this also registers the owner on first call).
         if Self::require_owner_auth(env, actor, portfolio_id).is_ok() {
@@ -904,7 +902,7 @@ impl RebalancingContract {
     }
 
     /// Returns the default permissions bitmask for a given role.
-    pub fn get_role_permissions(env: Env, role: Role) -> u32 {
+    pub fn get_role_permissions(_env: Env, role: Role) -> u32 {
         role.default_permissions()
     }
 
@@ -1235,7 +1233,7 @@ impl RebalancingContract {
             }
             observations.push_back(alerts::MetricObservation {
                 metric: alerts::MetricType::AssetDrift,
-                asset: Some(asset),
+                asset: asset.clone(),
                 value: drift,
             });
         }
@@ -1248,7 +1246,7 @@ impl RebalancingContract {
                 }
                 observations.push_back(alerts::MetricObservation {
                     metric: alerts::MetricType::AssetDrift,
-                    asset: Some(asset),
+                    asset: asset.clone(),
                     value: drift,
                 });
             }
@@ -1256,7 +1254,7 @@ impl RebalancingContract {
 
         observations.push_back(alerts::MetricObservation {
             metric: alerts::MetricType::PortfolioDrift,
-            asset: None,
+            asset: symbol_short!("ALL"),
             value: max_drift,
         });
 

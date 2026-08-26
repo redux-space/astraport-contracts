@@ -33,7 +33,7 @@ impl AggregateEngine {
         }
 
         let asset = data_points.get(0).unwrap().asset.clone();
-        let num_sources = data_points.len();
+        let _num_sources = data_points.len();
         let now = env.ledger().timestamp();
 
         match method {
@@ -49,7 +49,7 @@ impl AggregateEngine {
     /// Median aggregation: sort prices and take the middle value.
     /// Resistant to outlier manipulation.
     fn aggregate_median(
-        env: &Env,
+        _env: &Env,
         data_points: &Vec<PriceDataPoint>,
         asset: Symbol,
         now: u64,

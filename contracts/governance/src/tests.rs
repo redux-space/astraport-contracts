@@ -17,8 +17,7 @@
 
 use super::*;
 use crate::records::{
-    Delegation, GovernanceConfig, ProposalActionType, ProposalStatus, TimelockStatus,
-    VoteDirection, VoteRecord,
+    Delegation, GovernanceConfig, ProposalActionType, ProposalStatus, VoteDirection, VoteRecord,
 };
 use crate::treasury::TreasuryRequest;
 use soroban_sdk::testutils::Address as _;
@@ -786,7 +785,6 @@ fn test_full_proposal_lifecycle() {
 
     let proposal = client.get_proposal(&pid).unwrap();
     assert_eq!(proposal.status, ProposalStatus::Executed);
-    assert_eq!(proposal.executor, Some(executor));
 }
 
 #[test]

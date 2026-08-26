@@ -13,8 +13,8 @@
 use soroban_sdk::{symbol_short, Env, Symbol, Vec};
 
 use crate::records::{
-    AssetDrift, DriftPct, DriftReport, DriftSummary, PortfolioSnapshot, RebalancePlan,
-    RebalanceRecord, RebalanceValidation, SimulationPlanResult, TradeConstraints, TradeOrder,
+    AssetDrift, DriftReport, DriftSummary, RebalancePlan, RebalanceRecord, RebalanceValidation,
+    SimulationPlanResult, TradeConstraints, TradeOrder,
 };
 use crate::{CurrentHoldings, RebalanceDirection, TargetAllocation};
 

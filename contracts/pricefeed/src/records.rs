@@ -153,8 +153,8 @@ pub struct PriceValidationConfig {
 pub struct BatchPriceRequest {
     /// The asset to request a price for.
     pub asset: Symbol,
-    /// Optional override for the aggregation method.
-    pub method_override: Option<AggregationMethod>,
+    /// Override for the aggregation method.
+    pub method_override: AggregationMethod,
 }
 
 /// Batch response item with the aggregated price.
@@ -163,8 +163,10 @@ pub struct BatchPriceRequest {
 pub struct BatchPriceResponse {
     /// The asset.
     pub asset: Symbol,
-    /// The aggregated price (or None if unavailable).
-    pub price: Option<AggregatedPrice>,
+    /// The aggregated price.
+    pub price: AggregatedPrice,
+    /// Whether a price was found for this asset.
+    pub found: bool,
 }
 
 // ---------------------------------------------------------------------------

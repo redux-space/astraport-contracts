@@ -34,7 +34,9 @@
 
 extern crate alloc;
 
-use soroban_sdk::{contract, contracterror, contractimpl, symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec,
+};
 
 use astraport_audit::logger::AuditLogger;
 use astraport_audit::records::{permissions, AuditEventType, StateSnapshot};
@@ -45,7 +47,7 @@ pub mod treasury;
 
 use crate::records::{
     Delegation, GovernanceAuditEntry, GovernanceConfig, GovernanceSummary, Proposal,
-    ProposalActionType, ProposalStatus, StorageKey, TimelockStatus, VoteDirection, VoteRecord,
+    ProposalActionType, ProposalStatus, StorageKey, VoteDirection, VoteRecord,
 };
 
 // ---------------------------------------------------------------------------
@@ -525,7 +527,6 @@ impl GovernanceDAO {
             voting_starts,
             voting_ends,
             timelock_expiry: 0,
-            executor: None,
             executed_at: 0,
         };
 
@@ -556,7 +557,7 @@ impl GovernanceDAO {
             (symbol_short!("PROPOSAL"), &proposer),
             ProposalEvent {
                 proposal_id,
-                proposer,
+                proposer: proposer.clone(),
                 title,
                 action_type: proposal.action_type,
             },
@@ -641,7 +642,7 @@ impl GovernanceDAO {
     ) -> Result<Symbol, Error> {
         voter.require_auth();
 
-        let config: GovernanceConfig = env
+        let _config: GovernanceConfig = env
             .storage()
             .persistent()
             .get(&StorageKey::Config)
@@ -729,7 +730,7 @@ impl GovernanceDAO {
             voter: voter.clone(),
             token_holder: token_holder.clone(),
             weight,
-            direction: direction,
+            direction,
             timestamp: now,
             is_delegated,
         };
@@ -762,7 +763,7 @@ impl GovernanceDAO {
             (symbol_short!("VOTE"), &voter),
             VoteEvent {
                 proposal_id,
-                voter,
+                voter: voter.clone(),
                 direction,
                 weight,
             },
@@ -784,7 +785,7 @@ impl GovernanceDAO {
     ) -> Result<Symbol, Error> {
         delegate.require_auth();
 
-        let config: GovernanceConfig = env
+        let _config: GovernanceConfig = env
             .storage()
             .persistent()
             .get(&StorageKey::Config)
@@ -881,7 +882,7 @@ impl GovernanceDAO {
             &symbol_short!("del_vote"),
             proposal_id,
             &delegate,
-            &token_holder,
+            &symbol_short!("del_vote"),
         );
 
         env.events().publish(
@@ -1114,7 +1115,6 @@ impl GovernanceDAO {
 
         let now = env.ledger().timestamp();
         proposal.status = ProposalStatus::Executed;
-        proposal.executor = Some(executor.clone());
         proposal.executed_at = now;
         env.storage()
             .persistent()
@@ -1179,13 +1179,13 @@ impl GovernanceDAO {
             &symbol_short!("delegate"),
             0,
             &delegator,
-            &delegate_addr,
+            &symbol_short!("delegate"),
         );
 
         env.events().publish(
             (symbol_short!("DELEGATE"), &delegator),
             DelegationEvent {
-                delegator,
+                delegator: delegator.clone(),
                 delegate: delegate_addr,
                 active: true,
             },
@@ -1211,16 +1211,16 @@ impl GovernanceDAO {
 
         Self::append_audit(
             &env,
-            &symbol_short!("revoke_del"),
+            &symbol_short!("rvk_del"),
             0,
             &delegator,
-            &delegation.delegate,
+            &symbol_short!("rvk_del"),
         );
 
         env.events().publish(
             (symbol_short!("DEL_REV"), &delegator),
             DelegationEvent {
-                delegator,
+                delegator: delegator.clone(),
                 delegate: delegation.delegate,
                 active: false,
             },
@@ -1434,7 +1434,7 @@ impl GovernanceDAO {
 
         Self::append_audit(
             &env,
-            &symbol_short!("em_unpause"),
+            &symbol_short!("em_unpse"),
             0,
             &admin,
             &symbol_short!("unpaused"),
@@ -1502,7 +1502,6 @@ impl GovernanceDAO {
 
         let now = env.ledger().timestamp();
         proposal.status = ProposalStatus::Executed;
-        proposal.executor = Some(caller.clone());
         proposal.executed_at = now;
         env.storage()
             .persistent()
@@ -1586,7 +1585,7 @@ impl GovernanceDAO {
             .unwrap_or_default();
         env.storage().persistent().set(
             &StorageKey::TotalRewardsDistributed,
-            &total_rewards + reward,
+            &(total_rewards + reward),
         );
 
         Self::append_audit(

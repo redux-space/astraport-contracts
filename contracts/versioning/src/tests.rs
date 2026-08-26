@@ -105,10 +105,12 @@ fn test_initialize_sets_admin() {
 }
 
 #[test]
-#[should_panic(expected = "already initialized")]
 fn test_double_initialize_panics() {
     let (_env, client, admin) = setup();
-    client.initialize(&admin);
+    assert_eq!(
+        client.try_initialize(&admin),
+        Err(Ok(Error::AlreadyInitialized))
+    );
 }
 
 #[test]
@@ -166,12 +168,14 @@ fn test_set_threshold_too_high_fails() {
 }
 
 #[test]
-#[should_panic(expected = "caller is not admin")]
 fn test_add_signer_non_admin_fails() {
-    let (_env, client, _admin) = setup();
-    let non_admin = Address::generate(&_env);
-    let signer = Address::generate(&_env);
-    client.add_signer(&non_admin, &signer);
+    let (env, client, _admin) = setup();
+    let non_admin = Address::generate(&env);
+    let signer = Address::generate(&env);
+    assert_eq!(
+        client.try_add_signer(&non_admin, &signer),
+        Err(Ok(Error::Unauthorized))
+    );
 }
 
 // ---------------------------------------------------------------------------

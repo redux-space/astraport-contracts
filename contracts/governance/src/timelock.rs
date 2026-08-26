@@ -58,7 +58,7 @@ pub fn schedule(
         .set(&StorageKey::TimelockEntry(proposal_id), &entry);
 
     env.events().publish(
-        (symbol_short!("TL_SCHEDULE"), proposal_id),
+        (symbol_short!("TL_SCHD"), proposal_id),
         (delay_seconds, execute_after),
     );
 

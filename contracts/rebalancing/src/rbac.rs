@@ -254,7 +254,9 @@ pub struct PermissionCheckResult {
     /// Missing permission bits (0 if granted).
     pub missing_permissions: u32,
     /// The role of the actor, if any.
-    pub role: Option<Role>,
+    pub role: Role,
+    /// Whether a role is assigned.
+    pub has_role: bool,
     /// Whether the assignment has expired.
     pub expired: bool,
 }
@@ -322,7 +324,8 @@ pub fn check_permission_detailed(
             held_permissions: assignment.permissions,
             required_permission,
             missing_permissions: missing,
-            role: Some(assignment.role),
+            role: assignment.role,
+            has_role: true,
             expired,
         }
     } else {
@@ -331,7 +334,8 @@ pub fn check_permission_detailed(
             held_permissions: 0,
             required_permission,
             missing_permissions: required_permission,
-            role: None,
+            role: Role::Viewer,
+            has_role: false,
             expired: false,
         }
     }

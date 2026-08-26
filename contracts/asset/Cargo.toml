@@ -1,5 +1,5 @@
 [package]
-name = "astraport-fee"
+name = "astraport-asset"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

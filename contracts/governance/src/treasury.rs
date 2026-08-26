@@ -5,7 +5,7 @@
 
 use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
 
-use crate::records::{GovernanceConfig, StorageKey, TreasuryRequest};
+pub use crate::records::{GovernanceConfig, StorageKey, TreasuryRequest};
 
 /// Sentinel return symbol.
 const OK: Symbol = symbol_short!("ok");
@@ -265,7 +265,7 @@ pub fn execute_request(
     );
 
     // Mark as executed.
-    let executor = env.current_contract_address();
+    let _executor = env.current_contract_address();
     request.executed = true;
     env.storage()
         .persistent()

@@ -88,8 +88,6 @@ pub struct Proposal {
     pub voting_ends: u64,
     /// Ledger timestamp when timelock expires (0 if not yet timelocked).
     pub timelock_expiry: u64,
-    /// Address that executed the proposal (0x0 if not yet executed).
-    pub executor: Option<Address>,
     /// Ledger timestamp when the proposal was executed (0 if not executed).
     pub executed_at: u64,
 }

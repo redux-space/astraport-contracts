@@ -6,9 +6,9 @@
 //! All weight values are expressed in **basis points** (1 bps = 0.01%).
 //! A total of 10_000 bps equals 100%.
 
-use soroban_sdk::{contracttype, symbol_short, Env, Map, Symbol, Vec};
+use soroban_sdk::{contracttype, Map, Symbol, Vec};
 
-use super::{RebalanceDirection, TargetAllocation};
+use super::RebalanceDirection;
 
 // ---------------------------------------------------------------------------
 // Drift detection records
@@ -124,9 +124,9 @@ pub struct TradeConstraints {
     pub max_total_value: i128,
 }
 
-impl TradeConstraints {
+impl Default for TradeConstraints {
     /// Default constraints: 1 unit minimum, no trade limit, no value cap.
-    pub fn default() -> Self {
+    fn default() -> Self {
         Self {
             min_trade_size: 1,
             max_trades: 0,
