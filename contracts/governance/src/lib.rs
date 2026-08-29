@@ -767,13 +767,7 @@ impl GovernanceDAO {
             &symbol_short!("cast"),
         );
 
-        Self::log_audit_if_configured(
-            &env,
-            &voter,
-            proposal_id,
-            symbol_short!("ok"),
-            &"vote_cast",
-        );
+        Self::log_audit_if_configured(&env, &voter, proposal_id, symbol_short!("ok"), &"vote_cast");
 
         env.events().publish(
             (symbol_short!("VOTE"), &voter),
@@ -1423,13 +1417,7 @@ impl GovernanceDAO {
             &symbol_short!("paused"),
         );
 
-        Self::log_audit_if_configured(
-            &env,
-            &caller,
-            0,
-            symbol_short!("ok"),
-            &"emergency_pause",
-        );
+        Self::log_audit_if_configured(&env, &caller, 0, symbol_short!("ok"), &"emergency_pause");
 
         env.events()
             .publish((symbol_short!("EM_PAUSE"), &caller), OK);

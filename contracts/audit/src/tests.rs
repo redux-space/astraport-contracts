@@ -608,15 +608,16 @@ fn test_new_event_types_logging() {
     assert_eq!(seq, 3);
 
     // Query by new event types
-    let gov_entries = client.query(
-        &LogQuery::new(&env, 10).event_type(AuditEventType::GovernanceProposal),
-    );
+    let gov_entries =
+        client.query(&LogQuery::new(&env, 10).event_type(AuditEventType::GovernanceProposal));
     assert_eq!(gov_entries.len(), 1);
-    assert_eq!(gov_entries.get(0).unwrap().event_type, AuditEventType::GovernanceProposal);
-
-    let trade_entries = client.query(
-        &LogQuery::new(&env, 10).event_type(AuditEventType::TradeExecution),
+    assert_eq!(
+        gov_entries.get(0).unwrap().event_type,
+        AuditEventType::GovernanceProposal
     );
+
+    let trade_entries =
+        client.query(&LogQuery::new(&env, 10).event_type(AuditEventType::TradeExecution));
     assert_eq!(trade_entries.len(), 1);
 }
 
@@ -703,69 +704,124 @@ fn test_new_event_type_names() {
     let a = asset();
     // Log each new event type
     let seq = client.log_event(
-        &s, &AuditEventType::PortfolioCreated, &a, &permissions::ADMIN,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "PortfolioCreated"),
+        &s,
+        &AuditEventType::PortfolioCreated,
+        &a,
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "PortfolioCreated"),
     );
     assert_eq!(seq, 1);
     let seq = client.log_event(
-        &s, &AuditEventType::RoleChange, &a, &permissions::ADMIN,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "RoleChange"),
+        &s,
+        &AuditEventType::RoleChange,
+        &a,
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "RoleChange"),
     );
     assert_eq!(seq, 2);
     let seq = client.log_event(
-        &s, &AuditEventType::YieldClaim, &a, &permissions::STAKER,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "YieldClaim"),
+        &s,
+        &AuditEventType::YieldClaim,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "YieldClaim"),
     );
     assert_eq!(seq, 3);
     let seq = client.log_event(
-        &s, &AuditEventType::GovernanceProposal, &a, &permissions::ADMIN,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "GovernanceProposal"),
+        &s,
+        &AuditEventType::GovernanceProposal,
+        &a,
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "GovernanceProposal"),
     );
     assert_eq!(seq, 4);
     let seq = client.log_event(
-        &s, &AuditEventType::GovernanceVote, &a, &permissions::STAKER,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "GovernanceVote"),
+        &s,
+        &AuditEventType::GovernanceVote,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "GovernanceVote"),
     );
     assert_eq!(seq, 5);
     let seq = client.log_event(
-        &s, &AuditEventType::TreasuryAction, &a, &permissions::ADMIN,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "TreasuryAction"),
+        &s,
+        &AuditEventType::TreasuryAction,
+        &a,
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "TreasuryAction"),
     );
     assert_eq!(seq, 6);
     let seq = client.log_event(
-        &s, &AuditEventType::EmergencyPause, &a, &permissions::ADMIN,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "EmergencyPause"),
+        &s,
+        &AuditEventType::EmergencyPause,
+        &a,
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "EmergencyPause"),
     );
     assert_eq!(seq, 7);
     let seq = client.log_event(
-        &s, &AuditEventType::TradeExecution, &a, &permissions::STAKER,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "TradeExecution"),
+        &s,
+        &AuditEventType::TradeExecution,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "TradeExecution"),
     );
     assert_eq!(seq, 8);
     let seq = client.log_event(
-        &s, &AuditEventType::OrderPlaced, &a, &permissions::STAKER,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "OrderPlaced"),
+        &s,
+        &AuditEventType::OrderPlaced,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "OrderPlaced"),
     );
     assert_eq!(seq, 9);
     let seq = client.log_event(
-        &s, &AuditEventType::OrderCancelled, &a, &permissions::STAKER,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "OrderCancelled"),
+        &s,
+        &AuditEventType::OrderCancelled,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "OrderCancelled"),
     );
     assert_eq!(seq, 10);
     let seq = client.log_event(
-        &s, &AuditEventType::FeeCollection, &a, &permissions::ADMIN,
-        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
-        &symbol_short!("ok"), &String::from_str(&env, "FeeCollection"),
+        &s,
+        &AuditEventType::FeeCollection,
+        &a,
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "FeeCollection"),
     );
     assert_eq!(seq, 11);
     // Verify all logged

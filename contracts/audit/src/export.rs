@@ -29,7 +29,8 @@ fn symbol_to_rust(s: &soroban_sdk::Symbol) -> RustString {
 
 /// CSV header shared by all exports. Column order is part of the contract
 /// protocol and is pinned by tests.
-pub const CSV_HEADER: &str = "seq,timestamp,event_type,actor,permissions,portfolio,outcome,detail,hash";
+pub const CSV_HEADER: &str =
+    "seq,timestamp,event_type,actor,permissions,portfolio,outcome,detail,hash";
 
 /// Extended CSV header including state snapshots.
 pub const CSV_HEADER_FULL: &str = "seq,timestamp,event_type,actor,permissions,portfolio,outcome,detail,hash,state_before,state_after";

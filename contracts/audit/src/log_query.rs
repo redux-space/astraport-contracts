@@ -5,8 +5,8 @@
 //! append-only primary index and returns every entry that matches with a
 //! cap of `limit`.
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
 use soroban_sdk::testutils::Address as _;
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
 
 use crate::records::{AuditEventType, AuditLog};
 

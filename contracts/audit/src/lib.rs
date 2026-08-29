@@ -501,10 +501,7 @@ impl AuditContract {
     /// Compute the SHA-256 digest of audit entries for off-chain signing.
     ///
     /// Returns the digest that should be signed with ed25519 off-chain.
-    pub fn compute_export_digest(
-        env: Env,
-        q: log_query::LogQuery,
-    ) -> soroban_sdk::BytesN<32> {
+    pub fn compute_export_digest(env: Env, q: log_query::LogQuery) -> soroban_sdk::BytesN<32> {
         let entries = Self::query(env.clone(), q);
         signing::compute_digest(&env, &entries)
     }
