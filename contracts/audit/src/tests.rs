@@ -523,3 +523,280 @@ fn test_export_csv_escapes_special_characters() {
     // Field should be wrapped in quotes because it contains a comma.
     assert!(body.contains("\"comma,with\"\"quotes\""));
 }
+
+// ---------------------------------------------------------------------------
+// Outcome filtering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_query_filters_by_outcome() {
+    let (env, client, _admin) = setup();
+    let s = staker(&env);
+    let a = asset();
+    let _ = client.log_event(
+        &s,
+        &AuditEventType::Stake,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, ""),
+    );
+    let _ = client.log_event(
+        &s,
+        &AuditEventType::Stake,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("fail"),
+        &String::from_str(&env, ""),
+    );
+    let ok_entries = client.query(&LogQuery::new(&env, 10).outcome(symbol_short!("ok")));
+    assert_eq!(ok_entries.len(), 1);
+    assert_eq!(ok_entries.get(0).unwrap().outcome, symbol_short!("ok"));
+}
+
+// ---------------------------------------------------------------------------
+// New event types
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_new_event_types_logging() {
+    let (env, client, _admin) = setup();
+    let s = staker(&env);
+    let a = asset();
+
+    // Test PortfolioCreated
+    let seq = client.log_event(
+        &s,
+        &AuditEventType::PortfolioCreated,
+        &a,
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &happy_snapshot(&env, symbol_short!("val"), 100),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "created"),
+    );
+    assert_eq!(seq, 1);
+
+    // Test GovernanceProposal
+    let seq = client.log_event(
+        &s,
+        &AuditEventType::GovernanceProposal,
+        &symbol_short!("gov"),
+        &permissions::ADMIN,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "submitted"),
+    );
+    assert_eq!(seq, 2);
+
+    // Test TradeExecution
+    let seq = client.log_event(
+        &s,
+        &AuditEventType::TradeExecution,
+        &symbol_short!("XLM_USDC"),
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "filled"),
+    );
+    assert_eq!(seq, 3);
+
+    // Query by new event types
+    let gov_entries = client.query(
+        &LogQuery::new(&env, 10).event_type(AuditEventType::GovernanceProposal),
+    );
+    assert_eq!(gov_entries.len(), 1);
+    assert_eq!(gov_entries.get(0).unwrap().event_type, AuditEventType::GovernanceProposal);
+
+    let trade_entries = client.query(
+        &LogQuery::new(&env, 10).event_type(AuditEventType::TradeExecution),
+    );
+    assert_eq!(trade_entries.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Full export with state snapshots and hash
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_export_jsonl_full_includes_hash() {
+    let (env, client, _admin) = setup();
+    let s = staker(&env);
+    let a = asset();
+    let _ = client.log_event(
+        &s,
+        &AuditEventType::Stake,
+        &a,
+        &permissions::STAKER,
+        &happy_snapshot(&env, a.clone(), 0),
+        &happy_snapshot(&env, a.clone(), 100),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "stake"),
+    );
+    let rows = client.export_jsonl_full(&LogQuery::new(&env, 10));
+    assert_eq!(rows.len(), 1);
+    let row = soroban_str_to_rust(&rows.get(0).unwrap());
+    assert!(row.contains("\"hash\""));
+    assert!(row.contains("\"state_before\""));
+    assert!(row.contains("\"state_after\""));
+}
+
+#[test]
+fn test_export_csv_full_includes_state() {
+    let (env, client, _admin) = setup();
+    let s = staker(&env);
+    let a = asset();
+    let _ = client.log_event(
+        &s,
+        &AuditEventType::Stake,
+        &a,
+        &permissions::STAKER,
+        &happy_snapshot(&env, a.clone(), 0),
+        &happy_snapshot(&env, a.clone(), 500),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "deposit"),
+    );
+    let rows = client.export_csv_full(&LogQuery::new(&env, 10));
+    assert_eq!(rows.len(), 2);
+    let header = soroban_str_to_rust(&rows.get(0).unwrap());
+    assert!(header.contains("hash"));
+    assert!(header.contains("state_before"));
+    assert!(header.contains("state_after"));
+    let body = soroban_str_to_rust(&rows.get(1).unwrap());
+    assert!(body.contains("XLM"));
+}
+
+// ---------------------------------------------------------------------------
+// Signing / digest computation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_compute_export_digest() {
+    let (env, client, _admin) = setup();
+    let s = staker(&env);
+    let a = asset();
+    let _ = client.log_event(
+        &s,
+        &AuditEventType::Stake,
+        &a,
+        &permissions::STAKER,
+        &StateSnapshot::empty(&env),
+        &StateSnapshot::empty(&env),
+        &symbol_short!("ok"),
+        &String::from_str(&env, "test"),
+    );
+    let digest = client.compute_export_digest(&LogQuery::new(&env, 10));
+    // Digest should be non-zero
+    assert_ne!(digest, soroban_sdk::BytesN::from_array(&env, &[0u8; 32]));
+}
+
+#[test]
+fn test_new_event_type_names() {
+    let (env, client, _admin) = setup();
+    let s = staker(&env);
+    let a = asset();
+    // Log each new event type
+    let seq = client.log_event(
+        &s, &AuditEventType::PortfolioCreated, &a, &permissions::ADMIN,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "PortfolioCreated"),
+    );
+    assert_eq!(seq, 1);
+    let seq = client.log_event(
+        &s, &AuditEventType::RoleChange, &a, &permissions::ADMIN,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "RoleChange"),
+    );
+    assert_eq!(seq, 2);
+    let seq = client.log_event(
+        &s, &AuditEventType::YieldClaim, &a, &permissions::STAKER,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "YieldClaim"),
+    );
+    assert_eq!(seq, 3);
+    let seq = client.log_event(
+        &s, &AuditEventType::GovernanceProposal, &a, &permissions::ADMIN,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "GovernanceProposal"),
+    );
+    assert_eq!(seq, 4);
+    let seq = client.log_event(
+        &s, &AuditEventType::GovernanceVote, &a, &permissions::STAKER,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "GovernanceVote"),
+    );
+    assert_eq!(seq, 5);
+    let seq = client.log_event(
+        &s, &AuditEventType::TreasuryAction, &a, &permissions::ADMIN,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "TreasuryAction"),
+    );
+    assert_eq!(seq, 6);
+    let seq = client.log_event(
+        &s, &AuditEventType::EmergencyPause, &a, &permissions::ADMIN,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "EmergencyPause"),
+    );
+    assert_eq!(seq, 7);
+    let seq = client.log_event(
+        &s, &AuditEventType::TradeExecution, &a, &permissions::STAKER,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "TradeExecution"),
+    );
+    assert_eq!(seq, 8);
+    let seq = client.log_event(
+        &s, &AuditEventType::OrderPlaced, &a, &permissions::STAKER,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "OrderPlaced"),
+    );
+    assert_eq!(seq, 9);
+    let seq = client.log_event(
+        &s, &AuditEventType::OrderCancelled, &a, &permissions::STAKER,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "OrderCancelled"),
+    );
+    assert_eq!(seq, 10);
+    let seq = client.log_event(
+        &s, &AuditEventType::FeeCollection, &a, &permissions::ADMIN,
+        &StateSnapshot::empty(&env), &StateSnapshot::empty(&env),
+        &symbol_short!("ok"), &String::from_str(&env, "FeeCollection"),
+    );
+    assert_eq!(seq, 11);
+    // Verify all logged
+    let all = client.query(&LogQuery::new(&env, 50));
+    assert_eq!(all.len(), 11);
+}
+
+#[test]
+fn test_log_event_with_full_state_snapshots() {
+    let (env, client, _admin) = setup();
+    let s = staker(&env);
+    let mut before = StateSnapshot::empty(&env);
+    before.push(symbol_short!("XLM"), 1000);
+    before.push(symbol_short!("USDC"), 5000);
+    let mut after = StateSnapshot::empty(&env);
+    after.push(symbol_short!("XLM"), 800);
+    after.push(symbol_short!("USDC"), 6000);
+    let seq = client.log_event(
+        &s,
+        &AuditEventType::Rebalance,
+        &symbol_short!("PORT1"),
+        &permissions::ADMIN,
+        &before,
+        &after,
+        &symbol_short!("ok"),
+        &String::from_str(&env, "rebalanced"),
+    );
+    assert_eq!(seq, 1);
+    let entry = client.query(&LogQuery::new(&env, 10)).get(0).unwrap();
+    assert_eq!(entry.state_before.fields.len(), 2);
+    assert_eq!(entry.state_after.fields.len(), 2);
+    assert_eq!(entry.state_after.fields.get(0).unwrap().value, 800);
+    assert_eq!(entry.state_after.fields.get(1).unwrap().value, 6000);
+}
