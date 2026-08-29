@@ -19,8 +19,8 @@
 use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol, Vec};
 
 pub mod cpmm;
-pub mod orderbook;
 pub mod oracle;
+pub mod orderbook;
 pub mod settlement;
 pub mod types;
 
@@ -223,12 +223,8 @@ impl PredictionMarket {
         }
 
         // Create the pool
-        let _lp_pool = pool::create_pool(
-            &env,
-            market_id,
-            market.outcomes.len(),
-            initial_collateral,
-        )?;
+        let _lp_pool =
+            pool::create_pool(&env, market_id, market.outcomes.len(), initial_collateral)?;
 
         let lp_tokens = initial_collateral;
 
@@ -455,16 +451,9 @@ impl PredictionMarket {
         pool::save_pool(&env, &lp_pool);
 
         // Update buyer's outcome token balance
-        let balance_key = PredictionDataKey::OutcomeBalance(
-            market_id,
-            buyer.clone(),
-            outcome_index,
-        );
-        let current_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&balance_key)
-            .unwrap_or(0);
+        let balance_key =
+            PredictionDataKey::OutcomeBalance(market_id, buyer.clone(), outcome_index);
+        let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         env.storage().persistent().set(
             &balance_key,
             &(current_balance
@@ -495,7 +484,11 @@ impl PredictionMarket {
 
         env.events().publish(
             (symbol_short!("BUY"), market_id, buyer),
-            (outcome_index, result.outcome_amount, result.collateral_amount),
+            (
+                outcome_index,
+                result.outcome_amount,
+                result.collateral_amount,
+            ),
         );
 
         Ok(result)
@@ -528,16 +521,9 @@ impl PredictionMarket {
         }
 
         // Check seller has enough outcome tokens
-        let balance_key = PredictionDataKey::OutcomeBalance(
-            market_id,
-            seller.clone(),
-            outcome_index,
-        );
-        let current_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&balance_key)
-            .unwrap_or(0);
+        let balance_key =
+            PredictionDataKey::OutcomeBalance(market_id, seller.clone(), outcome_index);
+        let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         if current_balance < outcome_tokens {
             return Err(PredictionError::InsufficientBalance);
         }
@@ -580,7 +566,11 @@ impl PredictionMarket {
     }
 
     /// Get the CPMM price for a specific outcome.
-    pub fn get_outcome_price(env: Env, market_id: u64, outcome_index: u32) -> Result<i128, PredictionError> {
+    pub fn get_outcome_price(
+        env: Env,
+        market_id: u64,
+        outcome_index: u32,
+    ) -> Result<i128, PredictionError> {
         let lp_pool = pool::load_pool(&env, market_id)?;
         pool::get_outcome_price(&lp_pool, outcome_index)
     }
@@ -639,7 +629,8 @@ impl PredictionMarket {
             return Err(PredictionError::InvalidOutcomeIndex);
         }
 
-        let order_id = ob::place_order(&env, market_id, &owner, outcome_index, side, price, amount)?;
+        let order_id =
+            ob::place_order(&env, market_id, &owner, outcome_index, side, price, amount)?;
 
         env.events().publish(
             (symbol_short!("ORD_ADD"), market_id, order_id),
@@ -661,10 +652,8 @@ impl PredictionMarket {
         let is_admin = Self::assert_admin(&env, &caller).is_ok();
         ob::cancel_order(&env, market_id, order_id, &caller, is_admin)?;
 
-        env.events().publish(
-            (symbol_short!("ORD_CNCL"), market_id, order_id),
-            caller,
-        );
+        env.events()
+            .publish((symbol_short!("ORD_CNCL"), market_id, order_id), caller);
 
         Ok(symbol_short!("ok"))
     }
@@ -696,7 +685,8 @@ impl PredictionMarket {
             .get(&PredictionDataKey::Market(market_id))
             .ok_or(PredictionError::MarketNotFound)?;
 
-        let result = oracle::submit_resolution(&env, &mut market, oracle_provider, resolved_outcome)?;
+        let result =
+            oracle::submit_resolution(&env, &mut market, oracle_provider, resolved_outcome)?;
 
         // Persist the updated market
         env.storage()
@@ -903,10 +893,8 @@ impl PredictionMarket {
 
         let payout = settle::redeem_winning_tokens(&env, &market, &user, amount)?;
 
-        env.events().publish(
-            (symbol_short!("REDEEM"), market_id, user),
-            (payout, amount),
-        );
+        env.events()
+            .publish((symbol_short!("REDEEM"), market_id, user), (payout, amount));
 
         Ok(payout)
     }
@@ -927,10 +915,8 @@ impl PredictionMarket {
 
         let payout = settle::settle_position(&env, &market, &user)?;
 
-        env.events().publish(
-            (symbol_short!("SETTLE"), market_id, user),
-            payout,
-        );
+        env.events()
+            .publish((symbol_short!("SETTLE"), market_id, user), payout);
 
         Ok(payout)
     }
@@ -970,11 +956,7 @@ impl PredictionMarket {
     }
 
     /// Get the user's position in a market.
-    pub fn get_user_position(
-        env: Env,
-        market_id: u64,
-        user: Address,
-    ) -> Option<Position> {
+    pub fn get_user_position(env: Env, market_id: u64, user: Address) -> Option<Position> {
         settle::get_position(&env, market_id, &user)
     }
 

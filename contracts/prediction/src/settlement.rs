@@ -149,18 +149,15 @@ pub fn redeem_winning_tokens(
     }
 
     // Get user's position
-    let mut position = get_position(env, market.market_id, user)
-        .ok_or(PredictionError::InsufficientBalance)?;
+    let mut position =
+        get_position(env, market.market_id, user).ok_or(PredictionError::InsufficientBalance)?;
 
     if position.settled {
         return Err(PredictionError::MarketAlreadyResolved);
     }
 
     // Check user has enough winning outcome tokens
-    let user_balance = position
-        .outcome_amounts
-        .get(winning_outcome)
-        .unwrap_or(0);
+    let user_balance = position.outcome_amounts.get(winning_outcome).unwrap_or(0);
 
     if user_balance < amount {
         return Err(PredictionError::InsufficientBalance);
@@ -206,10 +203,7 @@ pub fn calculate_payout(_market: &Market, position: &Position) -> Result<i128, P
         .resolved_outcome
         .ok_or(PredictionError::MarketNotResolved)?;
 
-    let amount = position
-        .outcome_amounts
-        .get(winning_outcome)
-        .unwrap_or(0);
+    let amount = position.outcome_amounts.get(winning_outcome).unwrap_or(0);
 
     // 1:1 redemption
     Ok(amount)
@@ -221,8 +215,8 @@ pub fn settle_position(
     market: &Market,
     user: &soroban_sdk::Address,
 ) -> Result<i128, PredictionError> {
-    let mut position = get_position(env, market.market_id, user)
-        .ok_or(PredictionError::InsufficientBalance)?;
+    let mut position =
+        get_position(env, market.market_id, user).ok_or(PredictionError::InsufficientBalance)?;
 
     if position.settled {
         return Err(PredictionError::MarketAlreadyResolved);
@@ -272,10 +266,7 @@ pub fn get_market_positions(
 /// Distribute accumulated fees to LP token holders proportionally.
 ///
 /// Called after market resolution to distribute trading fees.
-pub fn distribute_lp_fees(
-    _env: &Env,
-    pool: &mut LiquidityPool,
-) -> Result<i128, PredictionError> {
+pub fn distribute_lp_fees(_env: &Env, pool: &mut LiquidityPool) -> Result<i128, PredictionError> {
     let fees = pool.fees_accumulated;
     if fees <= 0 {
         return Ok(0);

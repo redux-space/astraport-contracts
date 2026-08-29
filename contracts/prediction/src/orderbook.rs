@@ -6,8 +6,8 @@
 use soroban_sdk::{Address, Env, Vec};
 
 use crate::types::{
-    OrderBookSnapshot, OrderSide, OrderStatus, PredictionDataKey, PredictionError,
-    PredictionOrder, TradeFill,
+    OrderBookSnapshot, OrderSide, OrderStatus, PredictionDataKey, PredictionError, PredictionOrder,
+    TradeFill,
 };
 
 /// Maximum order book depth per side.
@@ -77,10 +77,9 @@ pub fn place_order(
     };
 
     // Store the individual order
-    env.storage().persistent().set(
-        &PredictionDataKey::Order(market_id, order_id),
-        &order,
-    );
+    env.storage()
+        .persistent()
+        .set(&PredictionDataKey::Order(market_id, order_id), &order);
 
     // Add to the order book
     let mut orders = load_order_book(env, market_id)?;
@@ -118,10 +117,9 @@ pub fn cancel_order(
     // Update order status
     order.status = OrderStatus::Cancelled;
     order.remaining = 0;
-    env.storage().persistent().set(
-        &PredictionDataKey::Order(market_id, order_id),
-        &order,
-    );
+    env.storage()
+        .persistent()
+        .set(&PredictionDataKey::Order(market_id, order_id), &order);
 
     // Remove from book
     let mut orders = load_order_book(env, market_id)?;
@@ -133,15 +131,13 @@ pub fn cancel_order(
 
 /// Look up a single order by market and ID.
 pub fn get_order(env: &Env, market_id: u64, order_id: u64) -> Option<PredictionOrder> {
-    env.storage().persistent().get(&PredictionDataKey::Order(market_id, order_id))
+    env.storage()
+        .persistent()
+        .get(&PredictionDataKey::Order(market_id, order_id))
 }
 
 /// Get a snapshot of the order book for an outcome.
-pub fn get_book_snapshot(
-    env: &Env,
-    market_id: u64,
-    outcome_index: u32,
-) -> OrderBookSnapshot {
+pub fn get_book_snapshot(env: &Env, market_id: u64, outcome_index: u32) -> OrderBookSnapshot {
     let orders = load_order_book(env, market_id).unwrap_or_else(|_| Vec::new(env));
 
     let mut best_bid: i128 = 0;
@@ -257,9 +253,7 @@ pub fn match_order(
 
         // Fee calculation
         let fee = if fee_bps > 0 {
-            let notional = fill_qty
-                .checked_mul(order.price)
-                .unwrap_or(i128::MAX);
+            let notional = fill_qty.checked_mul(order.price).unwrap_or(i128::MAX);
             notional
                 .checked_mul(fee_bps)
                 .unwrap_or(i128::MAX)
@@ -292,10 +286,9 @@ pub fn match_order(
         }
 
         // Persist updated order
-        env.storage().persistent().set(
-            &PredictionDataKey::Order(market_id, order.order_id),
-            &order,
-        );
+        env.storage()
+            .persistent()
+            .set(&PredictionDataKey::Order(market_id, order.order_id), &order);
 
         remaining_amount -= fill_qty;
     }

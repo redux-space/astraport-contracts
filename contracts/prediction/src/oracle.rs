@@ -6,8 +6,8 @@
 use soroban_sdk::{Env, Symbol};
 
 use crate::types::{
-    Dispute, DisputeStatus, Market, MarketStatus, OracleSource, PredictionDataKey,
-    PredictionError, ResolutionData, DISPUTE_PERIOD_SECS,
+    Dispute, DisputeStatus, Market, MarketStatus, OracleSource, PredictionDataKey, PredictionError,
+    ResolutionData, DISPUTE_PERIOD_SECS,
 };
 
 // ---------------------------------------------------------------------------
@@ -20,16 +20,17 @@ pub fn set_oracle_source(
     market_id: u64,
     source: &OracleSource,
 ) -> Result<(), PredictionError> {
-    env.storage().persistent().set(
-        &PredictionDataKey::OracleSource(market_id),
-        source,
-    );
+    env.storage()
+        .persistent()
+        .set(&PredictionDataKey::OracleSource(market_id), source);
     Ok(())
 }
 
 /// Get the oracle source for a market.
 pub fn get_oracle_source(env: &Env, market_id: u64) -> Option<OracleSource> {
-    env.storage().persistent().get(&PredictionDataKey::OracleSource(market_id))
+    env.storage()
+        .persistent()
+        .get(&PredictionDataKey::OracleSource(market_id))
 }
 
 // ---------------------------------------------------------------------------
@@ -64,8 +65,8 @@ pub fn submit_resolution(
     }
 
     // Check oracle source is configured and matches
-    let source = get_oracle_source(env, market.market_id)
-        .ok_or(PredictionError::OracleNotConfigured)?;
+    let source =
+        get_oracle_source(env, market.market_id).ok_or(PredictionError::OracleNotConfigured)?;
 
     if source.provider_id != oracle_provider {
         return Err(PredictionError::Unauthorized);
@@ -99,7 +100,9 @@ pub fn submit_resolution(
 
 /// Get the resolution data for a market.
 pub fn get_resolution_data(env: &Env, market_id: u64) -> Option<ResolutionData> {
-    env.storage().persistent().get(&PredictionDataKey::ResolutionData(market_id))
+    env.storage()
+        .persistent()
+        .get(&PredictionDataKey::ResolutionData(market_id))
 }
 
 /// Check if a market can be resolved.
@@ -173,10 +176,9 @@ pub fn file_dispute(
         resolved_at: None,
     };
 
-    env.storage().persistent().set(
-        &PredictionDataKey::Dispute(market.market_id),
-        &dispute,
-    );
+    env.storage()
+        .persistent()
+        .set(&PredictionDataKey::Dispute(market.market_id), &dispute);
 
     Ok(dispute)
 }
@@ -190,8 +192,7 @@ pub fn resolve_dispute(
     market: &mut Market,
     accepted: bool,
 ) -> Result<Dispute, PredictionError> {
-    let mut dispute = get_dispute(env, market.market_id)
-        .ok_or(PredictionError::NoDispute)?;
+    let mut dispute = get_dispute(env, market.market_id).ok_or(PredictionError::NoDispute)?;
 
     if dispute.status != DisputeStatus::Pending {
         return Err(PredictionError::InvalidMarketParams);
@@ -205,10 +206,9 @@ pub fn resolve_dispute(
     };
     dispute.resolved_at = Some(now);
 
-    env.storage().persistent().set(
-        &PredictionDataKey::Dispute(market.market_id),
-        &dispute,
-    );
+    env.storage()
+        .persistent()
+        .set(&PredictionDataKey::Dispute(market.market_id), &dispute);
 
     if accepted {
         // Overturn the resolution — update market to new outcome
@@ -216,8 +216,8 @@ pub fn resolve_dispute(
         market.resolved_at = Some(now);
 
         // Update resolution data
-        let mut resolution = get_resolution_data(env, market.market_id)
-            .ok_or(PredictionError::MarketNotResolved)?;
+        let mut resolution =
+            get_resolution_data(env, market.market_id).ok_or(PredictionError::MarketNotResolved)?;
         resolution.resolved_outcome = dispute.claimed_outcome;
         resolution.confirmed = true;
 
@@ -232,7 +232,9 @@ pub fn resolve_dispute(
 
 /// Get the dispute for a market.
 pub fn get_dispute(env: &Env, market_id: u64) -> Option<Dispute> {
-    env.storage().persistent().get(&PredictionDataKey::Dispute(market_id))
+    env.storage()
+        .persistent()
+        .get(&PredictionDataKey::Dispute(market_id))
 }
 
 /// Check if a market can be disputed.
@@ -274,10 +276,7 @@ pub fn transition_to_pending_resolution(
 /// Early close a market (admin/creator only).
 ///
 /// Sets all outcome token reserves to zero and resolves with no winning outcome.
-pub fn early_close_market(
-    env: &Env,
-    market: &mut Market,
-) -> Result<(), PredictionError> {
+pub fn early_close_market(env: &Env, market: &mut Market) -> Result<(), PredictionError> {
     if !market.allow_early_close {
         return Err(PredictionError::InvalidMarketParams);
     }
@@ -294,10 +293,7 @@ pub fn early_close_market(
 }
 
 /// Cancel a market (admin only, only if no trades have occurred).
-pub fn cancel_market(
-    _env: &Env,
-    market: &mut Market,
-) -> Result<(), PredictionError> {
+pub fn cancel_market(_env: &Env, market: &mut Market) -> Result<(), PredictionError> {
     if market.total_collateral > 0 {
         return Err(PredictionError::ActivePositionsExist);
     }

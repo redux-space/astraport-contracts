@@ -12,8 +12,8 @@
 use soroban_sdk::{Env, Vec};
 
 use crate::types::{
-    LPResult, LiquidityPool, PredictionDataKey, PredictionError, SwapResult,
-    DECIMAL_PRECISION, MIN_LIQUIDITY,
+    LPResult, LiquidityPool, PredictionDataKey, PredictionError, SwapResult, DECIMAL_PRECISION,
+    MIN_LIQUIDITY,
 };
 
 // ---------------------------------------------------------------------------
@@ -72,10 +72,9 @@ pub fn load_pool(env: &Env, market_id: u64) -> Result<LiquidityPool, PredictionE
 
 /// Save a pool to storage.
 pub fn save_pool(env: &Env, pool: &LiquidityPool) {
-    env.storage().persistent().set(
-        &PredictionDataKey::LiquidityPool(pool.market_id),
-        pool,
-    );
+    env.storage()
+        .persistent()
+        .set(&PredictionDataKey::LiquidityPool(pool.market_id), pool);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +86,10 @@ pub fn save_pool(env: &Env, pool: &LiquidityPool) {
 /// price_i = collateral_reserve / outcome_reserve_i
 ///
 /// Returns price scaled by DECIMAL_PRECISION.
-pub fn get_outcome_price(pool: &LiquidityPool, outcome_index: u32) -> Result<i128, PredictionError> {
+pub fn get_outcome_price(
+    pool: &LiquidityPool,
+    outcome_index: u32,
+) -> Result<i128, PredictionError> {
     let reserve = pool
         .outcome_reserves
         .get(outcome_index)
@@ -108,9 +110,7 @@ pub fn get_outcome_price(pool: &LiquidityPool, outcome_index: u32) -> Result<i12
 }
 
 /// Get prices for all outcomes.
-pub fn get_all_outcome_prices(
-    pool: &LiquidityPool,
-) -> Result<Vec<i128>, PredictionError> {
+pub fn get_all_outcome_prices(pool: &LiquidityPool) -> Result<Vec<i128>, PredictionError> {
     let mut prices = Vec::new(pool.outcome_reserves.env());
     let num_outcomes = pool.outcome_reserves.len();
     for i in 0..num_outcomes {
@@ -192,15 +192,16 @@ pub fn buy_outcome_tokens(
         (collateral_after_fee
             .checked_mul(10_000)
             .ok_or(PredictionError::ArithmeticOverflow)?)
-            .checked_div(old_collateral)
-            .ok_or(PredictionError::ArithmeticOverflow)?
+        .checked_div(old_collateral)
+        .ok_or(PredictionError::ArithmeticOverflow)?
     } else {
         0
     };
 
     // Update pool state
     pool.collateral_reserve = new_collateral;
-    pool.outcome_reserves.set(outcome_index, new_outcome_reserve);
+    pool.outcome_reserves
+        .set(outcome_index, new_outcome_reserve);
     pool.fees_accumulated = pool
         .fees_accumulated
         .checked_add(fee)
@@ -289,15 +290,16 @@ pub fn sell_outcome_tokens(
         (collateral_before_fee
             .checked_mul(10_000)
             .ok_or(PredictionError::ArithmeticOverflow)?)
-            .checked_div(old_collateral)
-            .ok_or(PredictionError::ArithmeticOverflow)?
+        .checked_div(old_collateral)
+        .ok_or(PredictionError::ArithmeticOverflow)?
     } else {
         0
     };
 
     // Update pool state
     pool.collateral_reserve = new_collateral;
-    pool.outcome_reserves.set(outcome_index, new_outcome_reserve);
+    pool.outcome_reserves
+        .set(outcome_index, new_outcome_reserve);
     pool.fees_accumulated = pool
         .fees_accumulated
         .checked_add(fee)
