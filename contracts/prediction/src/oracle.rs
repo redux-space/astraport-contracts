@@ -3,7 +3,7 @@
 //! Handles submitting resolution data from oracle providers, confirming
 //! resolutions, and managing the dispute lifecycle.
 
-use soroban_sdk::{symbol_short, Env, Symbol};
+use soroban_sdk::{Env, Symbol};
 
 use crate::types::{
     Dispute, DisputeStatus, Market, MarketStatus, OracleSource, PredictionDataKey,
@@ -118,7 +118,7 @@ pub fn can_resolve(market: &Market, now: u64) -> bool {
 pub fn file_dispute(
     env: &Env,
     market: &Market,
-    disputer: &Symbol,
+    disputer: &soroban_sdk::Address,
     claimed_outcome: u32,
     evidence: Symbol,
     bond_amount: i128,
