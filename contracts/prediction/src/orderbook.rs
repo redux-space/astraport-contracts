@@ -3,7 +3,7 @@
 //! Supports placing, canceling, and matching limit orders for outcome tokens.
 //! Uses price-time priority matching (FIFO at each price level).
 
-use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{Address, Env, Vec};
 
 use crate::types::{
     OrderBookSnapshot, OrderSide, OrderStatus, PredictionDataKey, PredictionError,
