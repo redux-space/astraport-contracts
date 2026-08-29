@@ -53,6 +53,7 @@ dependencies = [
 name = "astraport-emergency"
 version = "0.1.0"
 dependencies = [
+ "astraport-audit",
  "soroban-sdk",
 ]
 
@@ -112,6 +113,7 @@ dependencies = [
 name = "astraport-trade"
 version = "0.1.0"
 dependencies = [
+ "astraport-audit",
  "soroban-sdk",
 ]
 
