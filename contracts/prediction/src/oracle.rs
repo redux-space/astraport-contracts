@@ -295,7 +295,7 @@ pub fn early_close_market(
 
 /// Cancel a market (admin only, only if no trades have occurred).
 pub fn cancel_market(
-    env: &Env,
+    _env: &Env,
     market: &mut Market,
 ) -> Result<(), PredictionError> {
     if market.total_collateral > 0 {
