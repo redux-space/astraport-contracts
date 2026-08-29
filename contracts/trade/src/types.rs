@@ -112,6 +112,8 @@ pub enum TradeDataKey {
     PairVolume(Symbol),
     /// Registered pair list.
     PairList,
+    /// Optional audit-log sink address.
+    AuditSink,
 }
 
 // ---------------------------------------------------------------------------

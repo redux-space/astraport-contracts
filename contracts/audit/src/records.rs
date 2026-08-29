@@ -46,6 +46,28 @@ pub enum AuditEventType {
     ScheduleChange = 7,
     /// Admin-level configuration change (alert threshold, default APR, etc.).
     AdminAction = 8,
+    /// Portfolio was created or initialized.
+    PortfolioCreated = 9,
+    /// Role granted or revoked (RBAC change).
+    RoleChange = 10,
+    /// Yield claimed by a staker.
+    YieldClaim = 11,
+    /// Governance proposal submitted.
+    GovernanceProposal = 12,
+    /// Governance vote cast.
+    GovernanceVote = 13,
+    /// Treasury withdrawal or spending action.
+    TreasuryAction = 14,
+    /// Emergency pause or unpause.
+    EmergencyPause = 15,
+    /// Trade executed (order matched or batch filled).
+    TradeExecution = 16,
+    /// Order placed on the order book.
+    OrderPlaced = 17,
+    /// Order cancelled from the order book.
+    OrderCancelled = 18,
+    /// Fee collected from a transaction.
+    FeeCollection = 19,
     /// Catch-all for events that don't fit a predefined type.
     Custom = 99,
 }
@@ -180,4 +202,6 @@ pub enum StorageKey {
     IndexByPortfolio(Symbol, u32),
     /// Index of every logged sequence id (1:1 with `Entry(seq)`).
     AllSeqs,
+    /// Bucket index for an outcome secondary lookup.
+    IndexByOutcome(Symbol, u32),
 }

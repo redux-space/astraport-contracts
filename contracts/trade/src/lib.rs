@@ -15,7 +15,10 @@
 //! - [`engine`] — Atomic batch execution: multi-leg settlement that rolls
 //!   back entirely on any failure.
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Vec};
+
+use astraport_audit::logger::AuditLogger;
+use astraport_audit::records::{permissions, AuditEventType, StateSnapshot};
 
 pub mod engine;
 pub mod orderbook;
@@ -163,7 +166,20 @@ impl TradeEngine {
             return Err(TradeError::InvalidOrderAmount);
         }
 
-        ob::place_order(&env, &pair_id, &owner, side, price, amount)
+        let order_id = ob::place_order(&env, &pair_id, &owner, side, price, amount)?;
+
+        Self::log_audit_if_configured(
+            &env,
+            &owner,
+            &pair_id,
+            AuditEventType::OrderPlaced,
+            0,
+            amount,
+            symbol_short!("ok"),
+            &"order_placed",
+        );
+
+        Ok(order_id)
     }
 
     /// Cancel an order.  Only the order owner or admin may cancel.
@@ -177,6 +193,17 @@ impl TradeEngine {
 
         let is_admin = Self::assert_admin(&env, &caller).is_ok();
         ob::cancel_order(&env, &pair_id, order_id, &caller, is_admin)?;
+
+        Self::log_audit_if_configured(
+            &env,
+            &caller,
+            &pair_id,
+            AuditEventType::OrderCancelled,
+            0,
+            0,
+            symbol_short!("ok"),
+            &"order_cancelled",
+        );
 
         env.events()
             .publish((symbol_short!("ORDCNCL"), pair_id, order_id), caller);
@@ -253,6 +280,17 @@ impl TradeEngine {
             );
         }
 
+        Self::log_audit_if_configured(
+            &env,
+            &user,
+            &symbol_short!("BATCH"),
+            AuditEventType::TradeExecution,
+            0,
+            result.total_fills as i128,
+            symbol_short!("ok"),
+            &"batch_executed",
+        );
+
         env.events().publish(
             (symbol_short!("BATCH_OK"), user.clone()),
             (result.total_fills, result.legs.len()),
@@ -315,6 +353,54 @@ impl TradeEngine {
             return Err(TradeError::Unauthorized);
         }
         Ok(())
+    }
+
+    /// Configure the audit-log sink address. Admin-only.
+    pub fn set_audit_sink(env: Env, admin: Address, sink: Address) -> Result<Symbol, TradeError> {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin)?;
+        env.storage()
+            .persistent()
+            .set(&TradeDataKey::AuditSink, &sink);
+        Ok(symbol_short!("ok"))
+    }
+
+    /// Read the audit-log sink address, if configured.
+    pub fn get_audit_sink(env: Env) -> Option<Address> {
+        env.storage().persistent().get(&TradeDataKey::AuditSink)
+    }
+
+    /// Append an audit event if a sink is configured. No-op otherwise.
+    fn log_audit_if_configured(
+        env: &Env,
+        actor: &Address,
+        pair_id: &Symbol,
+        event_type: AuditEventType,
+        before_balance: i128,
+        after_balance: i128,
+        outcome: Symbol,
+        detail: &str,
+    ) {
+        let key = TradeDataKey::AuditSink;
+        let sink: Option<Address> = env.storage().persistent().get(&key);
+        if let Some(sink) = sink {
+            let mut before = StateSnapshot::empty(env);
+            before.push(pair_id.clone(), before_balance);
+            let mut after = StateSnapshot::empty(env);
+            after.push(pair_id.clone(), after_balance);
+            let detail_str = soroban_sdk::String::from_str(env, detail);
+            let logger = AuditLogger::new(env, &sink);
+            let _ = logger.log_event(
+                actor.clone(),
+                event_type,
+                pair_id.clone(),
+                permissions::STAKER,
+                before,
+                after,
+                outcome,
+                detail_str,
+            );
+        }
     }
 }
 
