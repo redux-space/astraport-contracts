@@ -26,12 +26,16 @@ pub struct LogQuery {
     pub actor: Address,
     /// Portfolio filter symbol. Ignored when `filter_portfolio` is false.
     pub portfolio: Symbol,
+    /// Outcome filter symbol. Ignored when `filter_outcome` is false.
+    pub outcome: Symbol,
     /// Whether `event_type` filtering is active.
     pub filter_event_type: bool,
     /// Whether `actor` filtering is active.
     pub filter_actor: bool,
     /// Whether `portfolio` filtering is active.
     pub filter_portfolio: bool,
+    /// Whether `outcome` filtering is active.
+    pub filter_outcome: bool,
     /// Maximum number of entries returned.
     pub limit: u32,
     /// Reserved for future use (e.g. cursor-based pagination).
@@ -48,9 +52,11 @@ impl LogQuery {
             event_type: AuditEventType::Custom,
             actor: dummy_address(env),
             portfolio: symbol_short!(""),
+            outcome: symbol_short!(""),
             filter_event_type: false,
             filter_actor: false,
             filter_portfolio: false,
+            filter_outcome: false,
             limit,
             cursor: 0,
         }
@@ -89,6 +95,13 @@ impl LogQuery {
         self
     }
 
+    /// Restrict the query to a single outcome symbol.
+    pub fn outcome(mut self, o: Symbol) -> Self {
+        self.outcome = o;
+        self.filter_outcome = true;
+        self
+    }
+
     /// Override the maximum number of entries returned.
     pub fn limit(mut self, limit: u32) -> Self {
         self.limit = limit;
@@ -110,6 +123,9 @@ impl LogQuery {
             return false;
         }
         if self.filter_portfolio && entry.portfolio != self.portfolio {
+            return false;
+        }
+        if self.filter_outcome && entry.outcome != self.outcome {
             return false;
         }
         true
