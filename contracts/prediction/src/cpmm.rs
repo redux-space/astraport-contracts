@@ -9,7 +9,7 @@
 //! ALL outcomes (since they share collateral), maintaining the k invariant
 //! for each outcome pair.
 
-use soroban_sdk::{symbol_short, Env, Symbol, Vec};
+use soroban_sdk::{Env, Vec};
 
 use crate::types::{
     LPResult, LiquidityPool, PredictionDataKey, PredictionError, SwapResult,
@@ -131,7 +131,7 @@ pub fn get_all_outcome_prices(
 ///   new_outcome_reserve = k_i / new_collateral_reserve
 ///   outcome_tokens_out = outcome_reserve_i - new_outcome_reserve
 pub fn buy_outcome_tokens(
-    env: &Env,
+    _env: &Env,
     pool: &mut LiquidityPool,
     outcome_index: u32,
     collateral_in: i128,
@@ -228,7 +228,7 @@ pub fn buy_outcome_tokens(
 ///   new_collateral_reserve = k_i / new_outcome_reserve
 ///   collateral_out = collateral_reserve - new_collateral_reserve
 pub fn sell_outcome_tokens(
-    env: &Env,
+    _env: &Env,
     pool: &mut LiquidityPool,
     outcome_index: u32,
     outcome_tokens_in: i128,
@@ -393,7 +393,7 @@ pub fn add_liquidity(
         actual_collateral = proportional_collateral;
 
         for i in 0..num_outcomes {
-            let amount = outcome_amounts.get(i).unwrap();
+            let _amount = outcome_amounts.get(i).unwrap();
             let proportional_amount = pool
                 .outcome_reserves
                 .get(i)
