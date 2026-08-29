@@ -4,6 +4,9 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Symbol,
 };
 
+use astraport_audit::logger::AuditLogger;
+use astraport_audit::records::{permissions, AuditEventType, StateSnapshot};
+
 // ============================================================================
 // Storage Key Symbols
 // ============================================================================
@@ -23,6 +26,7 @@ const RATE_LIMITS: Symbol = symbol_short!("RT_LT");
 const RATE_COUNTERS: Symbol = symbol_short!("RT_CN");
 const NOTIFIERS: Symbol = symbol_short!("NOTF");
 const LOCK_PERIOD: Symbol = symbol_short!("LCK_P");
+const AUDIT_SINK: Symbol = symbol_short!("AUD_S");
 
 // ============================================================================
 // Limits & Constants
@@ -378,6 +382,53 @@ impl EmergencyControls {
         symbol_short!("ok")
     }
 
+    /// Configure the audit-log sink address. Admin-only.
+    pub fn set_audit_sink(env: Env, sink: Address) -> Symbol {
+        let admin = require_admin(&env);
+        env.storage().persistent().set(&AUDIT_SINK, &sink);
+
+        append_incident(
+            &env,
+            IncidentActionType::ConfigUpdated,
+            IncidentSeverity::Medium,
+            &admin,
+            symbol_short!("AUD_S"),
+            0,
+        );
+
+        symbol_short!("ok")
+    }
+
+    /// Read the audit-log sink address, if configured.
+    pub fn get_audit_sink(env: Env) -> Option<Address> {
+        env.storage().persistent().get(&AUDIT_SINK)
+    }
+
+    /// Log an audit event if a sink is configured. No-op otherwise.
+    fn log_audit_if_configured(
+        env: &Env,
+        actor: &Address,
+        event_type: AuditEventType,
+        outcome: Symbol,
+        detail: &str,
+    ) {
+        let sink: Option<Address> = env.storage().persistent().get(&AUDIT_SINK);
+        if let Some(sink) = sink {
+            let detail_str = soroban_sdk::String::from_str(env, detail);
+            let logger = AuditLogger::new(env, &sink);
+            let _ = logger.log_event(
+                actor.clone(),
+                event_type,
+                symbol_short!("emerg"),
+                permissions::ADMIN,
+                StateSnapshot::empty(env),
+                StateSnapshot::empty(env),
+                outcome,
+                detail_str,
+            );
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Pause / Resume
     // -----------------------------------------------------------------------
@@ -409,6 +460,14 @@ impl EmergencyControls {
             0,
         );
 
+        Self::log_audit_if_configured(
+            &env,
+            &caller,
+            AuditEventType::EmergencyPause,
+            symbol_short!("ok"),
+            &"pause_activated",
+        );
+
         env.events()
             .publish((symbol_short!("PAUSE"), &caller), &reason);
 
@@ -433,6 +492,14 @@ impl EmergencyControls {
             &admin,
             reason.clone(),
             0,
+        );
+
+        Self::log_audit_if_configured(
+            &env,
+            &admin,
+            AuditEventType::EmergencyPause,
+            symbol_short!("ok"),
+            &"pause_deactivated",
         );
 
         env.events()
@@ -478,6 +545,14 @@ impl EmergencyControls {
             &user,
             symbol_short!("EM_WD"),
             amount,
+        );
+
+        Self::log_audit_if_configured(
+            &env,
+            &user,
+            AuditEventType::EmergencyUnstake,
+            symbol_short!("ok"),
+            &"emergency_withdrawal",
         );
 
         env.events().publish(
