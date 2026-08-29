@@ -107,6 +107,8 @@ impl PredictionMarket {
 
         let market_id = next_market_id(&env);
 
+        let desc_for_event = description.clone();
+
         let market = Market {
             market_id,
             description,
@@ -157,7 +159,7 @@ impl PredictionMarket {
 
         env.events().publish(
             (symbol_short!("MKT_ADD"), market_id),
-            (description, creator),
+            (desc_for_event, creator),
         );
 
         Ok(market_id)
@@ -221,7 +223,7 @@ impl PredictionMarket {
         }
 
         // Create the pool
-        let mut lp_pool = pool::create_pool(
+        let _lp_pool = pool::create_pool(
             &env,
             market_id,
             market.outcomes.len(),
@@ -474,7 +476,7 @@ impl PredictionMarket {
         let _ = settle::record_trade(
             &env,
             market_id,
-            &symbol_short!("pos"),
+            &buyer,
             outcome_index,
             true,
             result.outcome_amount,
@@ -729,7 +731,7 @@ impl PredictionMarket {
         let result = oracle::file_dispute(
             &env,
             &market,
-            &symbol_short!("disc"),
+            &disputer,
             claimed_outcome,
             evidence,
             bond_amount,
@@ -899,8 +901,7 @@ impl PredictionMarket {
             .get(&PredictionDataKey::Market(market_id))
             .ok_or(PredictionError::MarketNotFound)?;
 
-        let symbol_user = symbol_short!("usr");
-        let payout = settle::redeem_winning_tokens(&env, &market, &symbol_user, amount)?;
+        let payout = settle::redeem_winning_tokens(&env, &market, &user, amount)?;
 
         env.events().publish(
             (symbol_short!("REDEEM"), market_id, user),
@@ -924,8 +925,7 @@ impl PredictionMarket {
             .get(&PredictionDataKey::Market(market_id))
             .ok_or(PredictionError::MarketNotFound)?;
 
-        let symbol_user = symbol_short!("usr");
-        let payout = settle::settle_position(&env, &market, &symbol_user)?;
+        let payout = settle::settle_position(&env, &market, &user)?;
 
         env.events().publish(
             (symbol_short!("SETTLE"), market_id, user),
@@ -975,8 +975,7 @@ impl PredictionMarket {
         market_id: u64,
         user: Address,
     ) -> Option<Position> {
-        let symbol_user = symbol_short!("usr");
-        settle::get_position(&env, market_id, &symbol_user)
+        settle::get_position(&env, market_id, &user)
     }
 
     /// Check if a market's pool CPMM invariant is maintained.
