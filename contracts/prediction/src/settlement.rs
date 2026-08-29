@@ -4,11 +4,10 @@
 //! have been settled), holders of the winning outcome token can redeem them
 //! for collateral at a 1:1 rate.
 
-use soroban_sdk::{symbol_short, Env, Symbol, Vec};
+use soroban_sdk::{Env, Vec};
 
 use crate::types::{
     LiquidityPool, Market, MarketStatus, Position, PredictionDataKey, PredictionError,
-    PredictionOrder, DECIMAL_PRECISION,
 };
 
 // ---------------------------------------------------------------------------
@@ -16,7 +15,7 @@ use crate::types::{
 // ---------------------------------------------------------------------------
 
 /// Get a user's position in a market.
-pub fn get_position(env: &Env, market_id: u64, user: &Symbol) -> Option<Position> {
+pub fn get_position(env: &Env, market_id: u64, user: &soroban_sdk::Address) -> Option<Position> {
     let key = PredictionDataKey::Position(market_id, user.clone());
     env.storage().persistent().get(&key)
 }
@@ -31,7 +30,7 @@ pub fn save_position(env: &Env, position: &Position) {
 pub fn record_trade(
     env: &Env,
     market_id: u64,
-    user: &Symbol,
+    user: &soroban_sdk::Address,
     outcome_index: u32,
     is_buy: bool,
     amount: i128,
@@ -133,7 +132,7 @@ pub fn record_trade(
 pub fn redeem_winning_tokens(
     env: &Env,
     market: &Market,
-    user: &Symbol,
+    user: &soroban_sdk::Address,
     amount: i128,
 ) -> Result<i128, PredictionError> {
     // Market must be resolved
@@ -201,10 +200,8 @@ pub fn redeem_winning_tokens(
 }
 
 /// Calculate the total payout for a user if they redeem all their winning tokens.
-pub fn calculate_payout(
-    market: &Market,
-    position: &Position,
-) -> Result<i128, PredictionError> {
+pub fn calculate_payout(_market: &Market, position: &Position) -> Result<i128, PredictionError> {
+    let market = _market;
     let winning_outcome = market
         .resolved_outcome
         .ok_or(PredictionError::MarketNotResolved)?;
@@ -222,7 +219,7 @@ pub fn calculate_payout(
 pub fn settle_position(
     env: &Env,
     market: &Market,
-    user: &Symbol,
+    user: &soroban_sdk::Address,
 ) -> Result<i128, PredictionError> {
     let mut position = get_position(env, market.market_id, user)
         .ok_or(PredictionError::InsufficientBalance)?;
@@ -256,7 +253,7 @@ pub fn settle_position(
 pub fn get_market_positions(
     env: &Env,
     market_id: u64,
-    users: &Vec<Symbol>,
+    users: &Vec<soroban_sdk::Address>,
 ) -> Vec<Position> {
     let mut positions = Vec::new(env);
     for i in 0..users.len() {
@@ -276,7 +273,7 @@ pub fn get_market_positions(
 ///
 /// Called after market resolution to distribute trading fees.
 pub fn distribute_lp_fees(
-    env: &Env,
+    _env: &Env,
     pool: &mut LiquidityPool,
 ) -> Result<i128, PredictionError> {
     let fees = pool.fees_accumulated;
