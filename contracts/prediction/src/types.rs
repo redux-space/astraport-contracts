@@ -95,6 +95,8 @@ pub enum PredictionError {
     InvalidCategory = 27,
     /// Cannot close market that has active positions.
     ActivePositionsExist = 28,
+    /// An item already exists (e.g., duplicate dispute).
+    AlreadyExists = 29,
 }
 
 // ---------------------------------------------------------------------------
