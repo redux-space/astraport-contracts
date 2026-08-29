@@ -29,7 +29,10 @@ fn symbol_to_rust(s: &soroban_sdk::Symbol) -> RustString {
 
 /// CSV header shared by all exports. Column order is part of the contract
 /// protocol and is pinned by tests.
-pub const CSV_HEADER: &str = "seq,timestamp,event_type,actor,permissions,portfolio,outcome,detail";
+pub const CSV_HEADER: &str = "seq,timestamp,event_type,actor,permissions,portfolio,outcome,detail,hash";
+
+/// Extended CSV header including state snapshots.
+pub const CSV_HEADER_FULL: &str = "seq,timestamp,event_type,actor,permissions,portfolio,outcome,detail,hash,state_before,state_after";
 
 #[allow(dead_code)]
 fn to_rust_str(s: &String) -> RustString {
@@ -52,7 +55,7 @@ fn symbol_to_rust_str(env: &Env, s: &Symbol) -> RustString {
 /// One JSON object per `AuditLog` (no surrounding array).
 pub fn format_json_entry(env: &Env, entry: &AuditLog) -> String {
     let rs: RustString = format!(
-        "{{\"seq\":{},\"timestamp\":{},\"event_type\":\"{}\",\"actor\":\"{:?}\",\"permissions\":{},\"portfolio\":\"{:?}\",\"outcome\":\"{:?}\",\"detail\":\"{}\"}}",
+        "{{\"seq\":{},\"timestamp\":{},\"event_type\":\"{}\",\"actor\":\"{:?}\",\"permissions\":{},\"portfolio\":\"{:?}\",\"outcome\":\"{:?}\",\"detail\":\"{}\",\"hash\":\"{}\"}}",
         entry.seq,
         entry.timestamp,
         event_type_name(entry.event_type),
@@ -61,6 +64,26 @@ pub fn format_json_entry(env: &Env, entry: &AuditLog) -> String {
         symbol_to_rust(&entry.portfolio),
         symbol_to_rust(&entry.outcome),
         json_escape(&soroban_str(&entry.detail)),
+        hex_encode_hash(env, &entry.hash),
+    );
+    String::from_str(env, &rs)
+}
+
+/// Extended JSON object including state snapshots.
+pub fn format_json_entry_full(env: &Env, entry: &AuditLog) -> String {
+    let rs: RustString = format!(
+        "{{\"seq\":{},\"timestamp\":{},\"event_type\":\"{}\",\"actor\":\"{:?}\",\"permissions\":{},\"portfolio\":\"{:?}\",\"outcome\":\"{:?}\",\"detail\":\"{}\",\"hash\":\"{}\",\"state_before\":{},\"state_after\":{}}}",
+        entry.seq,
+        entry.timestamp,
+        event_type_name(entry.event_type),
+        soroban_str(&entry.actor.to_string()),
+        entry.permissions,
+        symbol_to_rust(&entry.portfolio),
+        symbol_to_rust(&entry.outcome),
+        json_escape(&soroban_str(&entry.detail)),
+        hex_encode_hash(env, &entry.hash),
+        snapshot_to_json(env, &entry.state_before),
+        snapshot_to_json(env, &entry.state_after),
     );
     String::from_str(env, &rs)
 }
@@ -68,7 +91,7 @@ pub fn format_json_entry(env: &Env, entry: &AuditLog) -> String {
 /// One CSV row matching [`CSV_HEADER`].
 pub fn format_csv_row(env: &Env, entry: &AuditLog) -> String {
     let rs: RustString = format!(
-        "{},{},{},{:?},{},{:?},{:?},{}",
+        "{},{},{},{:?},{},{:?},{:?},{},{}",
         entry.seq,
         entry.timestamp,
         event_type_name(entry.event_type),
@@ -77,6 +100,26 @@ pub fn format_csv_row(env: &Env, entry: &AuditLog) -> String {
         symbol_to_rust(&entry.portfolio),
         symbol_to_rust(&entry.outcome),
         csv_escape(&soroban_str(&entry.detail)),
+        hex_encode_hash(env, &entry.hash),
+    );
+    String::from_str(env, &rs)
+}
+
+/// Extended CSV row including state snapshots.
+pub fn format_csv_row_full(env: &Env, entry: &AuditLog) -> String {
+    let rs: RustString = format!(
+        "{},{},{},{:?},{},{:?},{:?},{},{},{},{}",
+        entry.seq,
+        entry.timestamp,
+        event_type_name(entry.event_type),
+        soroban_str(&entry.actor.to_string()),
+        entry.permissions,
+        symbol_to_rust(&entry.portfolio),
+        symbol_to_rust(&entry.outcome),
+        csv_escape(&soroban_str(&entry.detail)),
+        hex_encode_hash(env, &entry.hash),
+        csv_escape(&snapshot_to_compact(env, &entry.state_before)),
+        csv_escape(&snapshot_to_compact(env, &entry.state_after)),
     );
     String::from_str(env, &rs)
 }
@@ -92,6 +135,15 @@ pub fn format_jsonl(env: &Env, entries: &Vec<AuditLog>) -> Vec<String> {
     out
 }
 
+/// Extended JSON-Lines exporter including state snapshots.
+pub fn format_jsonl_full(env: &Env, entries: &Vec<AuditLog>) -> Vec<String> {
+    let mut out = Vec::new(env);
+    for entry in entries.iter() {
+        out.push_back(format_json_entry_full(env, &entry));
+    }
+    out
+}
+
 /// CSV batch exporter: first row is the header, subsequent rows are entries.
 pub fn format_csv(env: &Env, entries: &Vec<AuditLog>) -> Vec<String> {
     let mut out = Vec::new(env);
@@ -102,7 +154,65 @@ pub fn format_csv(env: &Env, entries: &Vec<AuditLog>) -> Vec<String> {
     out
 }
 
+/// Extended CSV exporter including state snapshots.
+pub fn format_csv_full(env: &Env, entries: &Vec<AuditLog>) -> Vec<String> {
+    let mut out = Vec::new(env);
+    out.push_back(String::from_str(env, CSV_HEADER_FULL));
+    for entry in entries.iter() {
+        out.push_back(format_csv_row_full(env, &entry));
+    }
+    out
+}
+
 // ---- internals ----
+
+/// Hex-encode a 32-byte hash for human-readable output.
+fn hex_encode_hash(_env: &Env, hash: &soroban_sdk::BytesN<32>) -> RustString {
+    let bytes = hash.to_array();
+    let mut out = RustString::with_capacity(64);
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for &b in bytes.iter() {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+/// Convert a StateSnapshot to a compact string representation.
+fn snapshot_to_compact(_env: &Env, snapshot: &crate::records::StateSnapshot) -> RustString {
+    let mut out = RustString::from("{");
+    let mut first = true;
+    for entry in snapshot.fields.iter() {
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        out.push_str(&symbol_to_rust(&entry.key));
+        out.push(':');
+        out.push_str(&RustString::from(entry.value.to_string()));
+    }
+    out.push('}');
+    out
+}
+
+/// Convert a StateSnapshot to a JSON array string.
+fn snapshot_to_json(_env: &Env, snapshot: &crate::records::StateSnapshot) -> RustString {
+    let mut out = RustString::from("[");
+    let mut first = true;
+    for entry in snapshot.fields.iter() {
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        out.push_str("{\"key\":\"");
+        out.push_str(&symbol_to_rust(&entry.key));
+        out.push_str("\",\"value\":");
+        out.push_str(&RustString::from(entry.value.to_string()));
+        out.push('}');
+    }
+    out.push(']');
+    out
+}
 
 fn event_type_name(t: AuditEventType) -> &'static str {
     match t {
@@ -115,6 +225,17 @@ fn event_type_name(t: AuditEventType) -> &'static str {
         AuditEventType::Withdrawal => "Withdrawal",
         AuditEventType::ScheduleChange => "ScheduleChange",
         AuditEventType::AdminAction => "AdminAction",
+        AuditEventType::PortfolioCreated => "PortfolioCreated",
+        AuditEventType::RoleChange => "RoleChange",
+        AuditEventType::YieldClaim => "YieldClaim",
+        AuditEventType::GovernanceProposal => "GovernanceProposal",
+        AuditEventType::GovernanceVote => "GovernanceVote",
+        AuditEventType::TreasuryAction => "TreasuryAction",
+        AuditEventType::EmergencyPause => "EmergencyPause",
+        AuditEventType::TradeExecution => "TradeExecution",
+        AuditEventType::OrderPlaced => "OrderPlaced",
+        AuditEventType::OrderCancelled => "OrderCancelled",
+        AuditEventType::FeeCollection => "FeeCollection",
         AuditEventType::Custom => "Custom",
     }
 }
