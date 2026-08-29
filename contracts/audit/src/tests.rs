@@ -9,9 +9,9 @@
 //! - JSON/CSV export formatting.
 
 use super::*;
-use crate::checksum::{chain_hash, entry_payload, first_chain_hash};
+use crate::checksum::{entry_payload, first_chain_hash};
 use crate::log_query::LogQuery;
-use crate::records::{permissions, AuditEventType, FieldEntry, RetentionPolicy, StateSnapshot};
+use crate::records::{permissions, AuditEventType, RetentionPolicy, StateSnapshot};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{symbol_short, Address, BytesN, Env, String, Symbol, Vec};
 
@@ -244,7 +244,7 @@ fn test_query_filters_by_portfolio() {
         &symbol_short!("ok"),
         &String::from_str(&env, ""),
     );
-    let only_xlm = client.query(&LogQuery::new(&env, 10).portfolio(xlm));
+    let only_xlm = client.query(&LogQuery::new(&env, 10).portfolio(xlm.clone()));
     assert_eq!(only_xlm.len(), 1);
     assert_eq!(only_xlm.get(0).unwrap().portfolio, xlm);
 }
@@ -445,10 +445,9 @@ fn soroban_str_to_rust(s: &String) -> alloc::string::String {
     if len == 0 {
         return alloc::string::String::new();
     }
-    let mut buf = [0u8; 256];
-    let slice_len = len.min(256);
-    s.copy_into_slice(&mut buf[..slice_len]);
-    alloc::string::String::from_utf8(buf[..slice_len].to_vec()).unwrap_or_default()
+    let mut buf = alloc::vec![0u8; len];
+    s.copy_into_slice(&mut buf);
+    alloc::string::String::from_utf8(buf).unwrap_or_default()
 }
 
 #[test]
@@ -520,7 +519,7 @@ fn test_export_csv_escapes_special_characters() {
         &String::from_str(&env, "comma,with\"quotes"),
     );
     let rows = client.export_csv(&LogQuery::new(&env, 10));
-    let body = rows.get(1).unwrap().to_string();
+    let body = soroban_str_to_rust(&rows.get(1).unwrap());
     // Field should be wrapped in quotes because it contains a comma.
-    assert!(body.contains("\"comma,\"\"with\"\"quotes\""));
+    assert!(body.contains("\"comma,with\"\"quotes\""));
 }
