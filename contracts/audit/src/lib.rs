@@ -36,6 +36,7 @@ pub mod export;
 pub mod log_query;
 pub mod logger;
 pub mod records;
+pub mod signing;
 
 use crate::checksum::{chain_hash, entry_payload, first_chain_hash};
 use crate::records::{
@@ -229,6 +230,11 @@ impl AuditContract {
         Self::append_index(
             &env,
             &StorageKey::IndexByPortfolio(entry.portfolio.clone(), Self::bucket(seq)),
+            seq,
+        );
+        Self::append_index(
+            &env,
+            &StorageKey::IndexByOutcome(entry.outcome.clone(), Self::bucket(seq)),
             seq,
         );
 
@@ -476,6 +482,43 @@ impl AuditContract {
     pub fn export_csv(env: Env, q: log_query::LogQuery) -> Vec<String> {
         let entries = Self::query(env.clone(), q);
         export::format_csv(&env, &entries)
+    }
+
+    /// Export the result of a [`LogQuery`] as JSON-Lines including state
+    /// snapshots and chain hashes.
+    pub fn export_jsonl_full(env: Env, q: log_query::LogQuery) -> Vec<String> {
+        let entries = Self::query(env.clone(), q);
+        export::format_jsonl_full(&env, &entries)
+    }
+
+    /// Export the result of a [`LogQuery`] as CSV including state snapshots
+    /// and chain hashes (header row first).
+    pub fn export_csv_full(env: Env, q: log_query::LogQuery) -> Vec<String> {
+        let entries = Self::query(env.clone(), q);
+        export::format_csv_full(&env, &entries)
+    }
+
+    /// Compute the SHA-256 digest of audit entries for off-chain signing.
+    ///
+    /// Returns the digest that should be signed with ed25519 off-chain.
+    pub fn compute_export_digest(
+        env: Env,
+        q: log_query::LogQuery,
+    ) -> soroban_sdk::BytesN<32> {
+        let entries = Self::query(env.clone(), q);
+        signing::compute_digest(&env, &entries)
+    }
+
+    /// Verify a signed audit export against a known public key.
+    ///
+    /// Panics (aborting the transaction) if the signature is invalid.
+    /// This is the secure default for Soroban contracts.
+    pub fn verify_export(
+        env: Env,
+        export: signing::SignedExport,
+        public_key: soroban_sdk::BytesN<32>,
+    ) {
+        signing::verify_export(&env, &export, &public_key)
     }
 }
 
