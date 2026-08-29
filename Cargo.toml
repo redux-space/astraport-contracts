@@ -13,6 +13,7 @@ members = [
     "contracts/versioning",
     "contracts/governance",
     "contracts/trade",
+    "contracts/prediction",
 ]
 resolver = "2"
 
