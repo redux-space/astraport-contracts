@@ -9,8 +9,20 @@
 //! - staking position management and state transition tests.
 
 use super::*;
-use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{symbol_short, Address, Env};
+use soroban_sdk::testutils::{Address as _, Events, Ledger};
+use soroban_sdk::{symbol_short, Address, Env, Symbol, TryFromVal, Vec};
+
+/// Check if any topic in a Soroban `Vec<Val>` matches the given symbol.
+fn topics_contain_symbol(topics: &Vec<soroban_sdk::Val>, env: &Env, sym: Symbol) -> bool {
+    for i in 0..topics.len() {
+        if let Ok(topic_sym) = Symbol::try_from_val(env, &topics.get(i).unwrap()) {
+            if topic_sym == sym {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 use crate::emergency::PenaltyDecayFunction;
 use crate::fixed_point::{SCALE, SECONDS_PER_DAY, SECONDS_PER_YEAR};
@@ -2100,4 +2112,143 @@ fn test_emergency_config_query_after_stake() {
         cfg.decay_function,
         PenaltyDecayFunction::Exponential
     ));
+}
+
+// ===========================================================================
+// Alert Threshold Tests
+// ===========================================================================
+
+/// Helper: count how many events in `env` have `ALERT` as their first topic.
+fn count_alert_events(env: &Env) -> u32 {
+    let events = env.events().all();
+    let alert_sym = symbol_short!("ALERT");
+    let mut count = 0u32;
+    for i in 0..events.len() {
+        let (_contract_id, topics, _data) = events.get(i).unwrap();
+        if topics_contain_symbol(&topics, env, alert_sym.clone()) {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Helper: return the deserialized `AlertEvent` data from the n-th ALERT event (0-based).
+fn nth_alert_event(env: &Env, n: u32) -> crate::alerts::AlertEvent {
+    let events = env.events().all();
+    let alert_sym = symbol_short!("ALERT");
+    let mut seen = 0u32;
+    for i in 0..events.len() {
+        let (_contract_id, topics, data) = events.get(i).unwrap();
+        if topics_contain_symbol(&topics, env, alert_sym.clone()) {
+            if seen == n {
+                return crate::alerts::AlertEvent::try_from_val(env, &data)
+                    .expect("failed to deserialize AlertEvent");
+            }
+            seen += 1;
+        }
+    }
+    panic!("not enough ALERT events; requested #{n} but only {seen} found");
+}
+
+#[test]
+fn test_get_alert_threshold_initially_none() {
+    let (_env, client) = setup();
+    assert_eq!(client.get_alert_threshold(), None);
+}
+
+#[test]
+fn test_set_and_get_alert_threshold() {
+    let (_env, client, admin) = setup_with_admin();
+    client.set_alert_threshold(&admin, &5_000);
+    assert_eq!(client.get_alert_threshold(), Some(5_000));
+}
+
+#[test]
+fn test_stake_below_threshold_emits_alert_event() {
+    let (env, client, admin) = setup_with_admin();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.set_alert_threshold(&admin, &1_000);
+    client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
+    assert_eq!(client.get_balance(&staker, &asset), 500);
+
+    assert_eq!(count_alert_events(&env), 1, "expected exactly one ALERT event");
+
+    let event = nth_alert_event(&env, 0);
+    assert_eq!(event.staker, staker);
+    assert_eq!(event.asset, asset);
+    assert_eq!(event.kind, crate::alerts::AlertKind::BalanceDrop);
+    assert_eq!(event.severity, crate::alerts::AlertSeverity::Critical);
+    assert_eq!(event.threshold_value, 1_000);
+    assert_eq!(event.observed_value, 500);
+}
+
+#[test]
+fn test_stake_above_threshold_no_alert_event() {
+    let (env, client, admin) = setup_with_admin();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.set_alert_threshold(&admin, &500);
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    assert_eq!(count_alert_events(&env), 0, "expected no ALERT events");
+}
+
+#[test]
+fn test_unstake_below_threshold_emits_alert_event() {
+    let (env, client, admin) = setup_with_admin();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.set_alert_threshold(&admin, &800);
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+    client.unstake(&staker, &asset, &300);
+    assert_eq!(client.get_balance(&staker, &asset), 700);
+
+    // Stake was above threshold, unstake brought it below → exactly 1 alert.
+    assert_eq!(count_alert_events(&env), 1, "expected exactly one ALERT event");
+
+    let event = nth_alert_event(&env, 0);
+    assert_eq!(event.kind, crate::alerts::AlertKind::BalanceDrop);
+    assert_eq!(event.threshold_value, 800);
+    assert_eq!(event.observed_value, 700);
+}
+
+#[test]
+fn test_unstake_above_threshold_no_alert_event() {
+    let (env, client, admin) = setup_with_admin();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.set_alert_threshold(&admin, &100);
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+    client.unstake(&staker, &asset, &300);
+
+    assert_eq!(count_alert_events(&env), 0, "expected no ALERT events");
+}
+
+#[test]
+fn test_no_threshold_no_alert_event() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+    client.unstake(&staker, &asset, &999);
+
+    assert_eq!(count_alert_events(&env), 0, "expected no ALERT events without threshold");
+}
+
+#[test]
+fn test_stake_at_exact_threshold_no_alert() {
+    let (env, client, admin) = setup_with_admin();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.set_alert_threshold(&admin, &500);
+    client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
+
+    assert_eq!(count_alert_events(&env), 0, "balance == threshold should not trigger alert");
 }
