@@ -203,13 +203,13 @@ impl StakingContract {
     /// for `(staker, asset)` by `amount`, maintains the protocol-level
     /// `TotalStaked(asset)` aggregate and the distinct-active-staker count,
     /// creates/updates the staking position, and emits a `StakeEvent`.
-    /// 
+    ///
     /// If a position already exists and is marked as immutable (locked), it cannot
     /// be modified - a new position must be created for additional stakes.
     pub fn stake(
-        env: Env, 
-        staker: Address, 
-        asset: Symbol, 
+        env: Env,
+        staker: Address,
+        asset: Symbol,
         amount: i128,
         unlock_schedule: crate::records::UnlockSchedule,
         lock_position: bool, // Whether to mark this position as immutable once created
@@ -227,39 +227,51 @@ impl StakingContract {
                 if *unlock_ts <= current_ts {
                     return Err(Error::InvalidStakeAmount); // Lock must be in the future
                 }
-            },
+            }
             crate::records::UnlockSchedule::Graduated(graduated) => {
-                if graduated.start_ts <= current_ts || graduated.interval_seconds == 0 || graduated.tranche_pct_bps > 10000 {
+                if graduated.start_ts <= current_ts
+                    || graduated.interval_seconds == 0
+                    || graduated.tranche_pct_bps > 10000
+                {
                     return Err(Error::InvalidStakeAmount); // Invalid graduated unlock parameters
                 }
-            },
+            }
             _ => {} // Immediate is always valid
         }
 
         // Check if we already have a position for this staker/asset
         let position_key = StakeDataKey::Position(staker.clone(), asset.clone());
-        let existing_position: Option<crate::records::StakingPosition> = env.storage().persistent().get(&position_key);
-        
+        let existing_position: Option<crate::records::StakingPosition> =
+            env.storage().persistent().get(&position_key);
+
         if let Some(pos) = existing_position {
             // If existing position is locked/immutable, we cannot modify it
             if pos.locked {
                 return Err(Error::ImmutablePosition);
             }
             // Otherwise, update the existing position's principal
-            let updated_principal = pos.principal.checked_add(amount).ok_or(Error::InvalidStakeAmount)?;
+            let updated_principal = pos
+                .principal
+                .checked_add(amount)
+                .ok_or(Error::InvalidStakeAmount)?;
             let mut updated_position = pos;
             updated_position.principal = updated_principal;
-            env.storage().persistent().set(&position_key, &updated_position);
+            env.storage()
+                .persistent()
+                .set(&position_key, &updated_position);
         } else {
             // Create new staking position
             let initial_state = match &unlock_schedule {
-                crate::records::UnlockSchedule::Cliff(_) | crate::records::UnlockSchedule::Graduated(_) => {
+                crate::records::UnlockSchedule::Cliff(_)
+                | crate::records::UnlockSchedule::Graduated(_) => {
                     crate::records::StakingState::Locked
-                },
+                }
                 _ => crate::records::StakingState::Active,
             };
 
-            let config: crate::records::StakingConfig = env.storage().persistent()
+            let config: crate::records::StakingConfig = env
+                .storage()
+                .persistent()
                 .get(&StakeDataKey::Config)
                 .unwrap_or_else(|| crate::records::StakingConfig {
                     default_apr: crate::fixed_point::SCALE / 20, // 5% default APR
@@ -296,7 +308,11 @@ impl StakingContract {
 
         // Update balance
         let balance_key = StakeDataKey::Balance(staker.clone(), asset.clone());
-        let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or_default();
+        let current_balance: i128 = env
+            .storage()
+            .persistent()
+            .get(&balance_key)
+            .unwrap_or_default();
         let new_balance = current_balance
             .checked_add(amount)
             .ok_or(Error::InvalidStakeAmount)?;
@@ -352,7 +368,9 @@ impl StakingContract {
 
         // Get the staking position to check lock status
         let position_key = StakeDataKey::Position(staker.clone(), asset.clone());
-        let mut position: crate::records::StakingPosition = env.storage().persistent()
+        let mut position: crate::records::StakingPosition = env
+            .storage()
+            .persistent()
             .get(&position_key)
             .ok_or(Error::NoStakingPosition)?;
 
@@ -369,7 +387,7 @@ impl StakingContract {
                     // Position just unlocked, update state
                     new_state = crate::records::StakingState::Claimable;
                 }
-            },
+            }
             crate::records::UnlockSchedule::Graduated(graduated) => {
                 // Calculate how much can be unstaked for graduated unlocks
                 let elapsed = current_ts.saturating_sub(graduated.start_ts);
@@ -377,24 +395,30 @@ impl StakingContract {
                     can_unstake = false;
                 } else {
                     let tranches = elapsed / graduated.interval_seconds;
-                    let unlocked_pct_bps = (tranches as u32).saturating_mul(graduated.tranche_pct_bps).min(10000);
+                    let unlocked_pct_bps = (tranches as u32)
+                        .saturating_mul(graduated.tranche_pct_bps)
+                        .min(10000);
                     let unlocked_amount = position.principal * (unlocked_pct_bps as i128) / 10000;
-                    let current_balance: i128 = env.storage().persistent()
+                    let current_balance: i128 = env
+                        .storage()
+                        .persistent()
                         .get(&StakeDataKey::Balance(staker.clone(), asset.clone()))
                         .unwrap_or(0);
                     let currently_unstaked: i128 = position.principal - current_balance;
                     let available_to_unstake: i128 = unlocked_amount - currently_unstaked;
-                    
+
                     if amount > available_to_unstake {
                         return Err(Error::ExceedsUnlockedAmount);
                     }
 
                     // If fully unlocked, update state
-                    if unlocked_pct_bps >= 10000 && position.state == crate::records::StakingState::Locked {
+                    if unlocked_pct_bps >= 10000
+                        && position.state == crate::records::StakingState::Locked
+                    {
                         new_state = crate::records::StakingState::Claimable;
                     }
                 }
-            },
+            }
             _ => {} // Immediate unlocks can always be unstaked
         }
 
@@ -420,21 +444,25 @@ impl StakingContract {
 
         // Check and update balance
         let balance_key = StakeDataKey::Balance(staker.clone(), asset.clone());
-        let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or_default();
+        let current_balance: i128 = env
+            .storage()
+            .persistent()
+            .get(&balance_key)
+            .unwrap_or_default();
         if amount > current_balance {
             return Err(Error::InsufficientBalance);
         }
         let new_balance = current_balance - amount;
-        
+
         // Update position principal
         position.principal = new_balance;
-        
+
         if new_balance == 0 {
             // Position is fully withdrawn
             env.storage().persistent().remove(&balance_key);
             position.state = crate::records::StakingState::Withdrawn;
             env.storage().persistent().set(&position_key, &position);
-            
+
             // Emit state transition to withdrawn
             env.events().publish(
                 (symbol_short!("state_chg"), staker.clone(), asset.clone()),
@@ -487,7 +515,11 @@ impl StakingContract {
 
     /// Return the full staking position details for a `(staker, asset)` pair.
     /// Returns an error if no position exists.
-    pub fn get_position(env: Env, staker: Address, asset: Symbol) -> Result<crate::records::StakingPosition, Error> {
+    pub fn get_position(
+        env: Env,
+        staker: Address,
+        asset: Symbol,
+    ) -> Result<crate::records::StakingPosition, Error> {
         env.storage()
             .persistent()
             .get(&StakeDataKey::Position(staker, asset))
@@ -650,7 +682,9 @@ impl StakingContract {
 
         // Get the staking position to get lock timestamps
         let position_key = StakeDataKey::Position(staker.clone(), asset.clone());
-        let mut position: crate::records::StakingPosition = env.storage().persistent()
+        let mut position: crate::records::StakingPosition = env
+            .storage()
+            .persistent()
             .get(&position_key)
             .ok_or(Error::NoStakingPosition)?;
 
@@ -669,7 +703,11 @@ impl StakingContract {
         // --- get lock timestamps from staking position -------------------
         let (lock_start_ts, unlock_ts) = match &position.unlock_schedule {
             crate::records::UnlockSchedule::Cliff(unlock_ts) => (position.opened_at, *unlock_ts),
-            crate::records::UnlockSchedule::Graduated(graduated) => (graduated.start_ts, graduated.start_ts + (10000 / graduated.tranche_pct_bps as u64) * graduated.interval_seconds),
+            crate::records::UnlockSchedule::Graduated(graduated) => (
+                graduated.start_ts,
+                graduated.start_ts
+                    + (10000 / graduated.tranche_pct_bps as u64) * graduated.interval_seconds,
+            ),
             _ => {
                 // No lock - use current timestamps to apply minimum penalty
                 let now = env.ledger().timestamp();
@@ -695,14 +733,14 @@ impl StakingContract {
 
         // Update position
         position.principal = new_balance;
-        
+
         if new_balance == 0 {
             // Position is fully withdrawn
             env.storage().persistent().remove(&balance_key);
             let old_state = position.state;
             position.state = crate::records::StakingState::Withdrawn;
             env.storage().persistent().set(&position_key, &position);
-            
+
             // Emit state transition to withdrawn
             env.events().publish(
                 (symbol_short!("state_chg"), staker.clone(), asset.clone()),

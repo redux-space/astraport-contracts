@@ -569,7 +569,13 @@ fn emergency_unstake_exponential_midpoint_lower_than_linear() {
         &treasury_lin,
         &true,
     );
-    client_lin.stake(&staker_lin, &asset_lin, &stake, &UnlockSchedule::Immediate, &false);
+    client_lin.stake(
+        &staker_lin,
+        &asset_lin,
+        &stake,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     client_lin.set_lock_position(&admin_lin, &staker_lin, &lock_start, &unlock, &stake);
     env_lin.ledger().set_timestamp(lock_start + total_lock / 2);
     let rec_lin = client_lin.emergency_unstake(&staker_lin, &asset_lin, &stake);
@@ -590,7 +596,13 @@ fn emergency_unstake_exponential_midpoint_lower_than_linear() {
         &treasury_exp,
         &true,
     );
-    client_exp.stake(&staker_exp, &asset_exp, &stake, &UnlockSchedule::Immediate, &false);
+    client_exp.stake(
+        &staker_exp,
+        &asset_exp,
+        &stake,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     client_exp.set_lock_position(&admin_exp, &staker_exp, &lock_start, &unlock, &stake);
     env_exp.ledger().set_timestamp(lock_start + total_lock / 2);
     let rec_exp = client_exp.emergency_unstake(&staker_exp, &asset_exp, &stake);
@@ -614,7 +626,13 @@ fn emergency_unstake_without_config_panics() {
     env.mock_all_auths();
     let staker = Address::generate(&env);
     let asset = symbol_short!("XLM");
-    client.stake(&staker, &asset, &1_000_000, &UnlockSchedule::Immediate, &false);
+    client.stake(
+        &staker,
+        &asset,
+        &1_000_000,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     // No configure_emergency_unstake call → should panic.
     client.emergency_unstake(&staker, &asset, &500_000);
 }
@@ -636,7 +654,13 @@ fn emergency_unstake_when_disabled_panics() {
         &false, // disabled
     );
     let asset = symbol_short!("XLM");
-    client.stake(&staker, &asset, &1_000_000, &UnlockSchedule::Immediate, &false);
+    client.stake(
+        &staker,
+        &asset,
+        &1_000_000,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     client.emergency_unstake(&staker, &asset, &500_000);
 }
 
