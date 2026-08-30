@@ -335,12 +335,15 @@ impl StakingContract {
         env.events().publish(
             (symbol_short!("stake"), staker.clone()),
             StakeEvent {
-                staker,
-                asset,
+                staker: staker.clone(),
+                asset: asset.clone(),
                 amount,
                 new_balance,
             },
         );
+
+        Self::check_balance_threshold(&env, &staker, &asset, new_balance);
+
         Ok(symbol_short!("ok"))
     }
 
@@ -496,12 +499,15 @@ impl StakingContract {
         env.events().publish(
             (symbol_short!("unstake"), staker.clone()),
             UnstakeEvent {
-                staker,
-                asset,
+                staker: staker.clone(),
+                asset: asset.clone(),
                 amount,
                 new_balance,
             },
         );
+
+        Self::check_balance_threshold(&env, &staker, &asset, new_balance);
+
         Ok(symbol_short!("ok"))
     }
 
@@ -853,6 +859,13 @@ impl StakingContract {
             .persistent()
             .set(&YieldDataKey::AlertThreshold, &threshold);
         Ok(symbol_short!("ok"))
+    }
+
+    /// Return the current alert threshold, if set.
+    pub fn get_alert_threshold(env: Env) -> Option<i128> {
+        env.storage()
+            .persistent()
+            .get(&YieldDataKey::AlertThreshold)
     }
 
     /// Reconfigure the default APR and compounding mode for new yield positions.
@@ -1291,6 +1304,38 @@ impl StakingContract {
                     .persistent()
                     .set(&count_key, &count.saturating_sub(1));
             }
+        }
+    }
+}
+
+/// Balance-threshold alert helpers.
+impl StakingContract {
+    /// Compare `balance` against the persisted alert threshold for
+    /// `(staker, asset)`. If the threshold is set and the balance is
+    /// below it, publish an [`alerts::AlertEvent`].
+    fn check_balance_threshold(env: &Env, staker: &Address, asset: &Symbol, balance: i128) {
+        let threshold: i128 = match env
+            .storage()
+            .persistent()
+            .get(&YieldDataKey::AlertThreshold)
+        {
+            Some(t) => t,
+            None => return,
+        };
+        if balance < threshold {
+            env.events().publish(
+                (symbol_short!("ALERT"), staker.clone(), asset.clone()),
+                alerts::AlertEvent {
+                    staker: staker.clone(),
+                    asset: asset.clone(),
+                    kind: alerts::AlertKind::BalanceDrop,
+                    severity: alerts::AlertSeverity::Critical,
+                    fired_at: env.ledger().timestamp(),
+                    threshold_value: threshold,
+                    observed_value: balance,
+                    label: soroban_sdk::String::from_str(env, "balance_below_threshold"),
+                },
+            );
         }
     }
 }
