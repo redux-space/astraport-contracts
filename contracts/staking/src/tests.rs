@@ -5,7 +5,8 @@
 //! - authentication and balance tests;
 //! - yield engine tests (accrual, rate changes, history, projections,
 //!   distributions);
-//! - emergency unstake tests.
+//! - emergency unstake tests;
+//! - staking position management and state transition tests.
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Ledger};
@@ -13,7 +14,7 @@ use soroban_sdk::{symbol_short, Address, Env};
 
 use crate::emergency::PenaltyDecayFunction;
 use crate::fixed_point::{SCALE, SECONDS_PER_DAY, SECONDS_PER_YEAR};
-use crate::records::CompoundingMode;
+use crate::records::{CompoundingMode, GraduatedUnlock, UnlockSchedule};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -61,7 +62,7 @@ fn test_initialize() {
 }
 
 #[test]
-#[should_panic(expected = "already initialized")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_double_initialize_panics() {
     let (_env, client, admin) = setup_with_admin();
     client.initialize(&admin);
@@ -86,10 +87,16 @@ fn test_stake_and_unstake() {
     let staker = Address::generate(&env);
     let asset = symbol_short!("XLM");
 
-    assert_eq!(client.stake(&staker, &asset, &100), symbol_short!("ok"));
+    assert_eq!(
+        client.stake(&staker, &asset, &100, &UnlockSchedule::Immediate, &false),
+        symbol_short!("ok")
+    );
     assert_eq!(client.get_balance(&staker, &asset), 100);
 
-    assert_eq!(client.stake(&staker, &asset, &50), symbol_short!("ok"));
+    assert_eq!(
+        client.stake(&staker, &asset, &50, &UnlockSchedule::Immediate, &false),
+        symbol_short!("ok")
+    );
     assert_eq!(client.get_balance(&staker, &asset), 150);
 
     assert_eq!(client.unstake(&staker, &asset, &75), symbol_short!("ok"));
@@ -108,9 +115,9 @@ fn test_stake_multiple_assets_independently() {
     let usdc = symbol_short!("USDC");
     let btc = symbol_short!("BTC");
 
-    client.stake(&staker, &xlm, &1_000);
-    client.stake(&staker, &usdc, &2_000);
-    client.stake(&staker, &btc, &500);
+    client.stake(&staker, &xlm, &1_000, &UnlockSchedule::Immediate, &false);
+    client.stake(&staker, &usdc, &2_000, &UnlockSchedule::Immediate, &false);
+    client.stake(&staker, &btc, &500, &UnlockSchedule::Immediate, &false);
 
     assert_eq!(client.get_balance(&staker, &xlm), 1_000);
     assert_eq!(client.get_balance(&staker, &usdc), 2_000);
@@ -130,14 +137,7 @@ fn test_unstake_more_than_balance() {
     let (_, client) = setup();
     let staker = Address::generate(&env);
     let asset = symbol_short!("XLM");
-    client.stake(&staker, &asset, &100);
-    // `unstake` returns `Result<Symbol, Error>`; soroban-sdk auto-generates
-    // `try_unstake` which returns
-    //   Result<
-    //     Result<Symbol, soroban_sdk::ConversionError>,
-    //     Result<crate::Error, soroban_sdk::InvokeError>
-    //   >
-    // i.e. outer Err + inner Ok = contract returned its own Error variant.
+    client.stake(&staker, &asset, &100, &UnlockSchedule::Immediate, &false);
     assert_eq!(
         client.try_unstake(&staker, &asset, &150),
         Err(Ok(crate::Error::InsufficientBalance)),
@@ -158,7 +158,7 @@ fn test_stake_requires_auth() {
     client.initialize(&admin);
     let staker = Address::generate(&env);
     let asset = symbol_short!("XLM");
-    client.stake(&staker, &asset, &1_000);
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
     assert_eq!(client.get_balance(&staker, &asset), 1_000);
 }
 
@@ -173,7 +173,7 @@ fn test_stake_unauthorized() {
     let staker = Address::generate(&env);
     let asset = symbol_short!("XLM");
     // No mock_auths — require_auth will fail.
-    client.stake(&staker, &asset, &1_000);
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
 }
 
 #[test]
@@ -183,7 +183,7 @@ fn test_set_alert_threshold_requires_admin_auth() {
 }
 
 #[test]
-#[should_panic(expected = "caller is not admin")]
+#[should_panic(expected = "Error(Contract, #12)")]
 fn test_set_alert_threshold_non_admin_fails() {
     let (env, client, _admin) = setup_with_admin();
     let non_admin = Address::generate(&env);
@@ -306,7 +306,7 @@ fn configure_emergency_unstake_stores_config() {
         &treasury,
         &true,
     );
-    client.stake(&staker, &asset, &1_000);
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
 
     let cfg = client.get_emergency_config().unwrap();
     assert_eq!(cfg.penalty_start_bps, 3_000);
@@ -316,7 +316,7 @@ fn configure_emergency_unstake_stores_config() {
 }
 
 #[test]
-#[should_panic(expected = "caller is not admin")]
+#[should_panic(expected = "Error(Contract, #12)")]
 fn configure_emergency_unstake_requires_admin() {
     let (env, client, _admin) = setup_with_admin();
     let non_admin = Address::generate(&env);
@@ -368,7 +368,13 @@ fn setup_emergency(
 
     // Stake.
     let asset = symbol_short!("XLM");
-    client.stake(&staker, &asset, &stake_amount);
+    client.stake(
+        &staker,
+        &asset,
+        &stake_amount,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
 
     // Register lock position.
     client.set_lock_position(&admin, &staker, &lock_start_ts, &unlock_ts, &stake_amount);
@@ -499,7 +505,7 @@ fn emergency_unstake_activates_cooldown() {
 }
 
 #[test]
-#[should_panic(expected = "CooldownActive")]
+#[should_panic(expected = "Error(Contract, #4)")]
 fn emergency_unstake_fails_during_cooldown() {
     let lock_start = 0u64;
     let total_lock = 30u64 * 24 * 3600;
@@ -563,7 +569,13 @@ fn emergency_unstake_exponential_midpoint_lower_than_linear() {
         &treasury_lin,
         &true,
     );
-    client_lin.stake(&staker_lin, &asset_lin, &stake);
+    client_lin.stake(
+        &staker_lin,
+        &asset_lin,
+        &stake,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     client_lin.set_lock_position(&admin_lin, &staker_lin, &lock_start, &unlock, &stake);
     env_lin.ledger().set_timestamp(lock_start + total_lock / 2);
     let rec_lin = client_lin.emergency_unstake(&staker_lin, &asset_lin, &stake);
@@ -584,7 +596,13 @@ fn emergency_unstake_exponential_midpoint_lower_than_linear() {
         &treasury_exp,
         &true,
     );
-    client_exp.stake(&staker_exp, &asset_exp, &stake);
+    client_exp.stake(
+        &staker_exp,
+        &asset_exp,
+        &stake,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     client_exp.set_lock_position(&admin_exp, &staker_exp, &lock_start, &unlock, &stake);
     env_exp.ledger().set_timestamp(lock_start + total_lock / 2);
     let rec_exp = client_exp.emergency_unstake(&staker_exp, &asset_exp, &stake);
@@ -602,19 +620,25 @@ fn emergency_unstake_exponential_midpoint_lower_than_linear() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "EmergencyUnstakeConfig not initialized")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn emergency_unstake_without_config_panics() {
     let (env, client, _admin) = setup_with_admin();
     env.mock_all_auths();
     let staker = Address::generate(&env);
     let asset = symbol_short!("XLM");
-    client.stake(&staker, &asset, &1_000_000);
+    client.stake(
+        &staker,
+        &asset,
+        &1_000_000,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     // No configure_emergency_unstake call → should panic.
     client.emergency_unstake(&staker, &asset, &500_000);
 }
 
 #[test]
-#[should_panic(expected = "EmergencyUnstakeDisabled")]
+#[should_panic(expected = "Error(Contract, #3)")]
 fn emergency_unstake_when_disabled_panics() {
     let (env, client, admin) = setup_with_admin();
     let treasury = Address::generate(&env);
@@ -630,12 +654,18 @@ fn emergency_unstake_when_disabled_panics() {
         &false, // disabled
     );
     let asset = symbol_short!("XLM");
-    client.stake(&staker, &asset, &1_000_000);
+    client.stake(
+        &staker,
+        &asset,
+        &1_000_000,
+        &UnlockSchedule::Immediate,
+        &false,
+    );
     client.emergency_unstake(&staker, &asset, &500_000);
 }
 
 #[test]
-#[should_panic(expected = "InsufficientBalanceForEmergencyUnstake")]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn emergency_unstake_more_than_balance_panics() {
     let lock_start = 0u64;
     let total_lock = 30u64 * 24 * 3600;
@@ -712,11 +742,11 @@ fn test_total_staked_reflects_stake_and_unstake_one_staker() {
     let staker = Address::generate(&env);
     let xlm = symbol_short!("XLM");
 
-    client.stake(&staker, &xlm, &1_000);
+    client.stake(&staker, &xlm, &1_000, &UnlockSchedule::Immediate, &false);
     assert_eq!(client.total_staked(&xlm), 1_000);
     assert_eq!(client.staker_count(), 1);
 
-    client.stake(&staker, &xlm, &500);
+    client.stake(&staker, &xlm, &500, &UnlockSchedule::Immediate, &false);
     assert_eq!(client.total_staked(&xlm), 1_500);
     assert_eq!(
         client.staker_count(),
@@ -747,9 +777,9 @@ fn test_total_staked_sums_across_multiple_stakers() {
     let carol = Address::generate(&env);
     let xlm = symbol_short!("XLM");
 
-    client.stake(&alice, &xlm, &1_000);
-    client.stake(&bob, &xlm, &2_500);
-    client.stake(&carol, &xlm, &750);
+    client.stake(&alice, &xlm, &1_000, &UnlockSchedule::Immediate, &false);
+    client.stake(&bob, &xlm, &2_500, &UnlockSchedule::Immediate, &false);
+    client.stake(&carol, &xlm, &750, &UnlockSchedule::Immediate, &false);
 
     assert_eq!(client.total_staked(&xlm), 1_000 + 2_500 + 750);
     assert_eq!(client.staker_count(), 3);
@@ -775,8 +805,8 @@ fn test_totals_are_per_asset() {
     let xlm = symbol_short!("XLM");
     let usdc = symbol_short!("USDC");
 
-    client.stake(&staker, &xlm, &1_000);
-    client.stake(&staker, &usdc, &5_000);
+    client.stake(&staker, &xlm, &1_000, &UnlockSchedule::Immediate, &false);
+    client.stake(&staker, &usdc, &5_000, &UnlockSchedule::Immediate, &false);
 
     assert_eq!(client.total_staked(&xlm), 1_000);
     assert_eq!(client.total_staked(&usdc), 5_000);
@@ -809,14 +839,14 @@ fn test_staker_count_increments_only_on_first_active_position() {
 
     assert_eq!(client.staker_count(), 0);
 
-    client.stake(&s1, &xlm, &100);
+    client.stake(&s1, &xlm, &100, &UnlockSchedule::Immediate, &false);
     assert_eq!(client.staker_count(), 1);
 
-    client.stake(&s1, &xlm, &50); // same (staker, asset); no increment
-    client.stake(&s2, &xlm, &100); // new staker
+    client.stake(&s1, &xlm, &50, &UnlockSchedule::Immediate, &false); // same (staker, asset); no increment
+    client.stake(&s2, &xlm, &100, &UnlockSchedule::Immediate, &false); // new staker
     assert_eq!(client.staker_count(), 2);
 
-    client.stake(&s3, &xlm, &200); // new staker
+    client.stake(&s3, &xlm, &200, &UnlockSchedule::Immediate, &false); // new staker
     assert_eq!(client.staker_count(), 3);
 
     // Partial unstakes do NOT change staker_count.
@@ -872,14 +902,14 @@ fn test_totals_handle_re_stake_after_full_exit() {
     let staker = Address::generate(&env);
     let asset = symbol_short!("XLM");
 
-    client.stake(&staker, &asset, &500);
+    client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
     assert_eq!(client.staker_count(), 1);
     client.unstake(&staker, &asset, &500);
     assert_eq!(client.staker_count(), 0);
     assert_eq!(client.total_staked(&asset), 0);
 
     // Re-stake after full exit: counter and total come back.
-    client.stake(&staker, &asset, &500);
+    client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
     assert_eq!(client.staker_count(), 1);
     assert_eq!(client.total_staked(&asset), 500);
 }
@@ -1083,8 +1113,8 @@ fn batch_claim_multiple_stakers() {
     let results = client.batch_claim(&stakers, &asset);
 
     assert_eq!(results.len(), 2);
-    let (a_addr, a_claimed) = results.get(0).unwrap();
-    let (b_addr, b_claimed) = results.get(1).unwrap();
+    let (_a_addr, a_claimed) = results.get(0).unwrap();
+    let (_b_addr, b_claimed) = results.get(1).unwrap();
     assert_eq!(a_claimed, alice_yield);
     assert_eq!(b_claimed, bob_yield);
 
@@ -1151,7 +1181,7 @@ fn distributions_not_paused_initially() {
 
 #[test]
 fn pause_and_unpause() {
-    let (env, client, admin) = setup_with_admin();
+    let (_env, client, admin) = setup_with_admin();
     assert_eq!(client.pause_distributions(&admin), symbol_short!("paused"));
     assert!(client.distributions_paused());
     assert_eq!(
@@ -1334,4 +1364,740 @@ fn recurring_distribution_recurring_from_reserve() {
     assert_eq!(client.process_distribution(&staker, &asset), 100_000);
 
     assert_eq!(client.reserve_balance(&asset), 800_000);
+}
+
+// ===========================================================================
+// Staking Position Management & State Transition Tests
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Position creation & querying
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_position_initial_no_position() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    assert_eq!(
+        client.try_get_position(&staker, &asset),
+        Err(Ok(crate::Error::NoStakingPosition))
+    );
+}
+
+#[test]
+fn test_stake_creates_position_with_immediate_schedule() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(100);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.staker, staker);
+    assert_eq!(pos.asset, asset);
+    assert_eq!(pos.principal, 1_000);
+    assert_eq!(pos.state, crate::records::StakingState::Active);
+    assert_eq!(pos.opened_at, 100);
+    assert!(!pos.locked);
+}
+
+#[test]
+fn test_stake_creates_position_with_cliff_lock() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(100);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    let unlock_ts = 200u64;
+
+    client.stake(
+        &staker,
+        &asset,
+        &500,
+        &UnlockSchedule::Cliff(unlock_ts),
+        &false,
+    );
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Locked);
+    assert_eq!(pos.principal, 500);
+    match pos.unlock_schedule {
+        UnlockSchedule::Cliff(ts) => assert_eq!(ts, unlock_ts),
+        _ => panic!("expected Cliff unlock schedule"),
+    }
+}
+
+#[test]
+fn test_stake_creates_position_with_graduated_unlock() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(100);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    let grad = GraduatedUnlock {
+        start_ts: 200,
+        interval_seconds: 30 * SECONDS_PER_DAY,
+        tranche_pct_bps: 2500, // 25% per tranche
+    };
+
+    client.stake(
+        &staker,
+        &asset,
+        &4_000,
+        &UnlockSchedule::Graduated(grad.clone()),
+        &false,
+    );
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Locked);
+    assert_eq!(pos.principal, 4_000);
+    match &pos.unlock_schedule {
+        UnlockSchedule::Graduated(g) => {
+            assert_eq!(g.start_ts, 200);
+            assert_eq!(g.interval_seconds, 30 * SECONDS_PER_DAY);
+            assert_eq!(g.tranche_pct_bps, 2500);
+        }
+        _ => panic!("expected Graduated unlock schedule"),
+    }
+}
+
+#[test]
+fn test_stake_with_lock_position_flag() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    // Stake with lock_position=true
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &true);
+
+    let pos = client.get_position(&staker, &asset);
+    assert!(pos.locked, "position should be marked as locked/immutable");
+}
+
+// ---------------------------------------------------------------------------
+// Position immutability
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_locked_position_cannot_be_modified() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    // Stake with lock_position=true
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &true);
+
+    // Attempting to stake more into the same locked position should fail
+    assert_eq!(
+        client.try_stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &true),
+        Err(Ok(crate::Error::ImmutablePosition))
+    );
+}
+
+#[test]
+fn test_unlocked_position_can_be_increased() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    // Stake without lock
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+    assert_eq!(client.get_balance(&staker, &asset), 1_000);
+
+    // Stake more into the same unlocked position
+    client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
+    assert_eq!(client.get_balance(&staker, &asset), 1_500);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.principal, 1_500);
+}
+
+// ---------------------------------------------------------------------------
+// State transitions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_state_transition_locked_to_claimable_on_cliff_expiry() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(100);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    let unlock_ts = 200u64;
+
+    client.stake(
+        &staker,
+        &asset,
+        &1_000,
+        &UnlockSchedule::Cliff(unlock_ts),
+        &false,
+    );
+
+    // Position starts locked
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Locked);
+
+    // Before unlock: unstake should fail
+    assert_eq!(
+        client.try_unstake(&staker, &asset, &500),
+        Err(Ok(crate::Error::PositionStillLocked))
+    );
+
+    // After unlock: unstake should succeed and transition state
+    env.ledger().set_timestamp(unlock_ts);
+    assert_eq!(client.unstake(&staker, &asset, &500), symbol_short!("ok"));
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Claimable);
+    assert_eq!(pos.principal, 500);
+    assert_eq!(client.get_balance(&staker, &asset), 500);
+}
+
+#[test]
+fn test_state_transition_to_withdrawn_on_full_unstake() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Active);
+
+    // Full unstake
+    client.unstake(&staker, &asset, &1_000);
+    assert_eq!(client.get_balance(&staker, &asset), 0);
+
+    // Position should be marked as Withdrawn
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Withdrawn);
+}
+
+#[test]
+fn test_state_transitions_emitted_as_events() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    let unlock_ts = 100u64;
+
+    // Stake with cliff lock → emits Withdrawn → Locked transition
+    client.stake(
+        &staker,
+        &asset,
+        &1_000,
+        &UnlockSchedule::Cliff(unlock_ts),
+        &false,
+    );
+
+    // Unstake after lock → emits Locked → Claimable transition
+    env.ledger().set_timestamp(unlock_ts);
+    client.unstake(&staker, &asset, &1_000);
+
+    // The position is now Withdrawn (full unstake)
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Withdrawn);
+}
+
+// ---------------------------------------------------------------------------
+// Balance management edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_stake_zero_amount_fails() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    assert_eq!(
+        client.try_stake(&staker, &asset, &0, &UnlockSchedule::Immediate, &false),
+        Err(Ok(crate::Error::InvalidStakeAmount))
+    );
+}
+
+#[test]
+fn test_unstake_zero_amount_fails() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    assert_eq!(
+        client.try_unstake(&staker, &asset, &0),
+        Err(Ok(crate::Error::InvalidStakeAmount))
+    );
+}
+
+#[test]
+fn test_unstake_no_position_fails() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    assert_eq!(
+        client.try_unstake(&staker, &asset, &100),
+        Err(Ok(crate::Error::NoStakingPosition))
+    );
+}
+
+#[test]
+fn test_balance_tracks_multiple_stakers_independently() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&alice, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+    client.stake(&bob, &asset, &2_000, &UnlockSchedule::Immediate, &false);
+
+    assert_eq!(client.get_balance(&alice, &asset), 1_000);
+    assert_eq!(client.get_balance(&bob, &asset), 2_000);
+
+    client.unstake(&alice, &asset, &500);
+    assert_eq!(client.get_balance(&alice, &asset), 500);
+    assert_eq!(client.get_balance(&bob, &asset), 2_000); // unchanged
+}
+
+#[test]
+fn test_stake_accumulates_correctly() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&staker, &asset, &100, &UnlockSchedule::Immediate, &false);
+    client.stake(&staker, &asset, &200, &UnlockSchedule::Immediate, &false);
+    client.stake(&staker, &asset, &300, &UnlockSchedule::Immediate, &false);
+
+    assert_eq!(client.get_balance(&staker, &asset), 600);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.principal, 600);
+}
+
+#[test]
+fn test_partial_unstake_preserves_position() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(50);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    client.unstake(&staker, &asset, &300);
+    assert_eq!(client.get_balance(&staker, &asset), 700);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.principal, 700);
+    // Position should still be active (not withdrawn)
+    assert_ne!(pos.state, crate::records::StakingState::Withdrawn);
+}
+
+// ---------------------------------------------------------------------------
+// Cliff lock enforcement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_cliff_lock_prevents_early_unstake() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    let unlock_ts = SECONDS_PER_YEAR; // unlock in 1 year
+
+    client.stake(
+        &staker,
+        &asset,
+        &1_000,
+        &UnlockSchedule::Cliff(unlock_ts),
+        &false,
+    );
+
+    // Try to unstake before unlock
+    assert_eq!(
+        client.try_unstake(&staker, &asset, &500),
+        Err(Ok(crate::Error::PositionStillLocked))
+    );
+    assert_eq!(client.get_balance(&staker, &asset), 1_000); // unchanged
+
+    // Advance time but still before unlock
+    env.ledger().set_timestamp(SECONDS_PER_YEAR - 1);
+    assert_eq!(
+        client.try_unstake(&staker, &asset, &500),
+        Err(Ok(crate::Error::PositionStillLocked))
+    );
+
+    // Now at unlock time: unstake succeeds
+    env.ledger().set_timestamp(unlock_ts);
+    assert_eq!(client.unstake(&staker, &asset, &500), symbol_short!("ok"));
+    assert_eq!(client.get_balance(&staker, &asset), 500);
+}
+
+// ---------------------------------------------------------------------------
+// Graduated unlock enforcement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_graduated_unlock_prevents_early_full_unstake() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    // 25% per tranche, 30-day intervals, starting at ts=1
+    // (start_ts must be > current_ts for validation to pass)
+    let grad = GraduatedUnlock {
+        start_ts: 1,
+        interval_seconds: 30 * SECONDS_PER_DAY,
+        tranche_pct_bps: 2500,
+    };
+
+    client.stake(
+        &staker,
+        &asset,
+        &1_000,
+        &UnlockSchedule::Graduated(grad),
+        &false,
+    );
+
+    // After 1 tranche (30 days from start_ts=1), only 25% = 250 is unlocked
+    env.ledger().set_timestamp(1 + 30 * SECONDS_PER_DAY);
+    assert_eq!(
+        client.try_unstake(&staker, &asset, &500),
+        Err(Ok(crate::Error::ExceedsUnlockedAmount))
+    );
+
+    // Unstake within the unlocked amount should work
+    assert_eq!(client.unstake(&staker, &asset, &250), symbol_short!("ok"));
+    assert_eq!(client.get_balance(&staker, &asset), 750);
+}
+
+// ---------------------------------------------------------------------------
+// Emergency withdrawal state transitions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_emergency_unstake_transitions_to_withdrawn_on_full_exit() {
+    let lock_start = 0u64;
+    let total_lock = 30u64 * 24 * 3600;
+    let unlock = lock_start + total_lock;
+
+    let (env, client, _admin, staker, _treasury) = setup_emergency(lock_start, unlock, 1_000_000);
+    let asset = symbol_short!("XLM");
+
+    // Position starts as Active (staked with Immediate schedule in setup_emergency)
+    let pos = client.get_position(&staker, &asset);
+    assert_ne!(pos.state, crate::records::StakingState::Withdrawn);
+
+    // Full emergency exit
+    env.ledger().set_timestamp(lock_start);
+    client.emergency_unstake(&staker, &asset, &1_000_000);
+
+    // Position should be Withdrawn
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Withdrawn);
+    assert_eq!(client.get_balance(&staker, &asset), 0);
+}
+
+#[test]
+fn test_emergency_unstake_preserves_position_on_partial() {
+    let lock_start = 0u64;
+    let total_lock = 30u64 * 24 * 3600;
+    let unlock = lock_start + total_lock;
+
+    let (env, client, _admin, staker, _treasury) = setup_emergency(lock_start, unlock, 1_000_000);
+    let asset = symbol_short!("XLM");
+
+    // Partial emergency exit
+    env.ledger().set_timestamp(lock_start);
+    client.emergency_unstake(&staker, &asset, &400_000);
+
+    // Position should still exist
+    let pos = client.get_position(&staker, &asset);
+    assert_ne!(pos.state, crate::records::StakingState::Withdrawn);
+    assert_eq!(pos.principal, 600_000);
+    assert_eq!(client.get_balance(&staker, &asset), 600_000);
+}
+
+// ---------------------------------------------------------------------------
+// Invalid unlock schedule validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_stake_with_past_cliff_timestamp_fails() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(200);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    // Cliff timestamp in the past
+    assert_eq!(
+        client.try_stake(&staker, &asset, &1_000, &UnlockSchedule::Cliff(100), &false),
+        Err(Ok(crate::Error::InvalidStakeAmount))
+    );
+}
+
+#[test]
+fn test_stake_with_graduated_past_start_ts_fails() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(200);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    let grad = GraduatedUnlock {
+        start_ts: 100, // already in the past
+        interval_seconds: 30 * SECONDS_PER_DAY,
+        tranche_pct_bps: 2500,
+    };
+
+    assert_eq!(
+        client.try_stake(
+            &staker,
+            &asset,
+            &1_000,
+            &UnlockSchedule::Graduated(grad),
+            &false
+        ),
+        Err(Ok(crate::Error::InvalidStakeAmount))
+    );
+}
+
+#[test]
+fn test_stake_with_zero_interval_graduated_fails() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    let grad = GraduatedUnlock {
+        start_ts: 100,
+        interval_seconds: 0, // invalid
+        tranche_pct_bps: 2500,
+    };
+
+    assert_eq!(
+        client.try_stake(
+            &staker,
+            &asset,
+            &1_000,
+            &UnlockSchedule::Graduated(grad),
+            &false
+        ),
+        Err(Ok(crate::Error::InvalidStakeAmount))
+    );
+}
+
+#[test]
+fn test_stake_with_invalid_tranche_pct_fails() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    let grad = GraduatedUnlock {
+        start_ts: 100,
+        interval_seconds: 30 * SECONDS_PER_DAY,
+        tranche_pct_bps: 15000, // > 100%
+    };
+
+    assert_eq!(
+        client.try_stake(
+            &staker,
+            &asset,
+            &1_000,
+            &UnlockSchedule::Graduated(grad),
+            &false
+        ),
+        Err(Ok(crate::Error::InvalidStakeAmount))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_balance accuracy across operations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_balance_after_stake_unstake_cycle() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    // Initial balance is 0
+    assert_eq!(client.get_balance(&staker, &asset), 0);
+
+    // Stake
+    client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
+    assert_eq!(client.get_balance(&staker, &asset), 500);
+
+    // More staking
+    client.stake(&staker, &asset, &300, &UnlockSchedule::Immediate, &false);
+    assert_eq!(client.get_balance(&staker, &asset), 800);
+
+    // Partial unstake
+    client.unstake(&staker, &asset, &200);
+    assert_eq!(client.get_balance(&staker, &asset), 600);
+
+    // More unstaking
+    client.unstake(&staker, &asset, &600);
+    assert_eq!(client.get_balance(&staker, &asset), 0);
+}
+
+#[test]
+fn test_get_balance_across_multiple_assets() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    let staker = Address::generate(&env);
+    let xlm = symbol_short!("XLM");
+    let usdc = symbol_short!("USDC");
+
+    client.stake(&staker, &xlm, &100, &UnlockSchedule::Immediate, &false);
+    client.stake(&staker, &usdc, &200, &UnlockSchedule::Immediate, &false);
+
+    assert_eq!(client.get_balance(&staker, &xlm), 100);
+    assert_eq!(client.get_balance(&staker, &usdc), 200);
+
+    client.unstake(&staker, &xlm, &50);
+    assert_eq!(client.get_balance(&staker, &xlm), 50);
+    assert_eq!(client.get_balance(&staker, &usdc), 200); // unaffected
+}
+
+// ---------------------------------------------------------------------------
+// Position data integrity
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_position_preserves_apr_and_mode() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    let custom_apr = SCALE / 5; // 20%
+
+    client.set_yield_defaults(&custom_apr, &CompoundingMode::Continuous);
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.apr, custom_apr);
+    assert_eq!(pos.mode, CompoundingMode::Continuous);
+}
+
+#[test]
+fn test_position_opened_at_matches_stake_timestamp() {
+    let (env, client) = setup();
+    env.ledger().set_timestamp(42);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.opened_at, 42);
+}
+
+#[test]
+fn test_position_staker_and_asset_match() {
+    let (env, client) = setup();
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("USDC");
+
+    client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.staker, staker);
+    assert_eq!(pos.asset, asset);
+
+    // Different asset should have no position
+    let other_asset = symbol_short!("XLM");
+    assert_eq!(
+        client.try_get_position(&staker, &other_asset),
+        Err(Ok(crate::Error::NoStakingPosition))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-staker edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_stakers_cannot_unstake_each_others_funds() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.stake(&alice, &asset, &1_000, &UnlockSchedule::Immediate, &false);
+    client.stake(&bob, &asset, &2_000, &UnlockSchedule::Immediate, &false);
+
+    // Alice tries to unstake more than her balance (Bob's funds don't count)
+    assert_eq!(
+        client.try_unstake(&alice, &asset, &1_500),
+        Err(Ok(crate::Error::InsufficientBalance))
+    );
+
+    // Both balances unchanged
+    assert_eq!(client.get_balance(&alice, &asset), 1_000);
+    assert_eq!(client.get_balance(&bob, &asset), 2_000);
+}
+
+// ---------------------------------------------------------------------------
+// Staking with yield integration
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_stake_with_cliff_generates_yield_after_unlock() {
+    let (env, client) = setup();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(0);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+    let unlock_ts = 30 * SECONDS_PER_DAY;
+
+    client.stake(
+        &staker,
+        &asset,
+        &SCALE,
+        &UnlockSchedule::Cliff(unlock_ts),
+        &false,
+    );
+
+    // After unlock, unstake should work and position transitions
+    env.ledger().set_timestamp(unlock_ts);
+    client.unstake(&staker, &asset, &(SCALE / 2));
+
+    let pos = client.get_position(&staker, &asset);
+    assert_eq!(pos.state, crate::records::StakingState::Claimable);
+    assert_eq!(pos.principal, SCALE / 2);
+    assert_eq!(client.get_balance(&staker, &asset), SCALE / 2);
+}
+
+#[test]
+fn test_emergency_config_query_after_stake() {
+    let (env, client, admin) = setup_with_admin();
+    let treasury = Address::generate(&env);
+    let staker = Address::generate(&env);
+    let asset = symbol_short!("XLM");
+
+    client.configure_emergency_unstake(
+        &admin,
+        &2_000,
+        &200,
+        &PenaltyDecayFunction::Exponential,
+        &0u64,
+        &treasury,
+        &true,
+    );
+    client.stake(&staker, &asset, &100, &UnlockSchedule::Immediate, &false);
+
+    let cfg = client.get_emergency_config().unwrap();
+    assert_eq!(cfg.penalty_start_bps, 2_000);
+    assert_eq!(cfg.penalty_end_bps, 200);
+    assert!(matches!(
+        cfg.decay_function,
+        PenaltyDecayFunction::Exponential
+    ));
 }
