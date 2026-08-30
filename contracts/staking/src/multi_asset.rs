@@ -93,6 +93,8 @@ impl<'a> MultiAssetStaking<'a> {
                 opened_at: now,
                 unlock_schedule: config.unlock_schedule.clone(),
                 accrued_yield: 0,
+                state: crate::records::StakingState::Active,
+                locked: false,
             },
         };
         self.save_position(&position);

@@ -273,6 +273,20 @@ pub struct AssetYieldRate {
     pub max_stake: i128,
 }
 
+/// The state of a staking position, tracking its lifecycle.
+#[contracttype]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StakingState {
+    /// Position is actively staking and locked (cannot withdraw yet)
+    Locked,
+    /// Position is active and unlocked (can withdraw or continue staking)
+    Active,
+    /// Position has finished its lock period and yield is available to claim
+    Claimable,
+    /// Position has been fully withdrawn and closed
+    Withdrawn,
+}
+
 /// A staking position for a specific (staker, asset) pair.
 #[contracttype]
 #[derive(Debug, Clone)]
@@ -285,6 +299,26 @@ pub struct StakingPosition {
     pub opened_at: u64,
     pub unlock_schedule: UnlockSchedule,
     pub accrued_yield: i128,
+    pub state: StakingState,
+    pub locked: bool, // Whether the position is immutable once locked
+}
+
+impl PartialEq for StakingPosition {
+    fn eq(&self, other: &Self) -> bool {
+        self.staker == other.staker
+            && self.asset == other.asset
+            && self.principal == other.principal
+            && self.apr == other.apr
+            && self.mode == other.mode
+            && self.opened_at == other.opened_at
+            && self.accrued_yield == other.accrued_yield
+            && self.state == other.state
+            && self.locked == other.locked
+            // Note: unlock_schedule is not compared for equality here
+            // because GraduatedUnlock fields are not PartialEq.
+            // For test purposes we compare the key fields above.
+            && core::mem::discriminant(&self.unlock_schedule) == core::mem::discriminant(&other.unlock_schedule)
+    }
 }
 
 /// How a staked position unlocks over time.
