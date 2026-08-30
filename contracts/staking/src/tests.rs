@@ -2173,7 +2173,11 @@ fn test_stake_below_threshold_emits_alert_event() {
     client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
     assert_eq!(client.get_balance(&staker, &asset), 500);
 
-    assert_eq!(count_alert_events(&env), 1, "expected exactly one ALERT event");
+    assert_eq!(
+        count_alert_events(&env),
+        1,
+        "expected exactly one ALERT event"
+    );
 
     let event = nth_alert_event(&env, 0);
     assert_eq!(event.staker, staker);
@@ -2208,7 +2212,11 @@ fn test_unstake_below_threshold_emits_alert_event() {
     assert_eq!(client.get_balance(&staker, &asset), 700);
 
     // Stake was above threshold, unstake brought it below → exactly 1 alert.
-    assert_eq!(count_alert_events(&env), 1, "expected exactly one ALERT event");
+    assert_eq!(
+        count_alert_events(&env),
+        1,
+        "expected exactly one ALERT event"
+    );
 
     let event = nth_alert_event(&env, 0);
     assert_eq!(event.kind, crate::alerts::AlertKind::BalanceDrop);
@@ -2238,7 +2246,11 @@ fn test_no_threshold_no_alert_event() {
     client.stake(&staker, &asset, &1_000, &UnlockSchedule::Immediate, &false);
     client.unstake(&staker, &asset, &999);
 
-    assert_eq!(count_alert_events(&env), 0, "expected no ALERT events without threshold");
+    assert_eq!(
+        count_alert_events(&env),
+        0,
+        "expected no ALERT events without threshold"
+    );
 }
 
 #[test]
@@ -2250,5 +2262,9 @@ fn test_stake_at_exact_threshold_no_alert() {
     client.set_alert_threshold(&admin, &500);
     client.stake(&staker, &asset, &500, &UnlockSchedule::Immediate, &false);
 
-    assert_eq!(count_alert_events(&env), 0, "balance == threshold should not trigger alert");
+    assert_eq!(
+        count_alert_events(&env),
+        0,
+        "balance == threshold should not trigger alert"
+    );
 }

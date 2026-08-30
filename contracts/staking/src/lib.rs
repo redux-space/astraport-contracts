@@ -863,7 +863,9 @@ impl StakingContract {
 
     /// Return the current alert threshold, if set.
     pub fn get_alert_threshold(env: Env) -> Option<i128> {
-        env.storage().persistent().get(&YieldDataKey::AlertThreshold)
+        env.storage()
+            .persistent()
+            .get(&YieldDataKey::AlertThreshold)
     }
 
     /// Reconfigure the default APR and compounding mode for new yield positions.
