@@ -172,6 +172,12 @@ cargo clippy
 ```
 
 ---
+## Related Repositories
+
+- **[astraport-api](https://github.com/redux-space/astraport-api)** 
+  Soroban smart contracts (access-control, escrow, marketplace, etc.)
+  - **[astraport-ui](https://github.com/redux-space/astraport-ui)** 
+
 
 ## 📚 Documentation
 
