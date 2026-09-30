@@ -61,7 +61,7 @@ mod tests {
         metric: MetricType,
         comparison: Comparison,
         trigger: i128,
-        asset: Option<Symbol>,
+        asset: Symbol,
     ) -> AlertThreshold {
         AlertThreshold {
             metric,
@@ -80,7 +80,7 @@ mod tests {
     fn threshold_with_bounds(
         env: &Env,
         metric: MetricType,
-        asset: Option<Symbol>,
+        asset: Symbol,
         lower: Option<i128>,
         upper: Option<i128>,
     ) -> AlertThreshold {
@@ -103,7 +103,7 @@ mod tests {
         metric: MetricType,
         comparison: Comparison,
         trigger: i128,
-        asset: Option<Symbol>,
+        asset: Symbol,
         action: AlertAction,
     ) -> AlertThreshold {
         AlertThreshold {
@@ -120,7 +120,7 @@ mod tests {
         }
     }
 
-    fn obs(metric: MetricType, asset: Option<Symbol>, value: i128) -> MetricObservation {
+    fn obs(metric: MetricType, asset: Symbol, value: i128) -> MetricObservation {
         MetricObservation {
             metric,
             asset,
@@ -203,7 +203,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             100,
-            None,
+            symbol_short!("ALL"),
         );
         let cfg = client.add_alert_threshold(&owner, &portfolio, &t);
         assert_eq!(cfg.thresholds.len(), 1);
@@ -237,7 +237,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             100,
-            None,
+            symbol_short!("ALL"),
         );
         let res = client.try_add_alert_threshold(&owner, &portfolio, &t);
         assert_eq!(res, Err(Ok(RebalancingError::AlertConfigNotFound)));
@@ -256,13 +256,13 @@ mod tests {
             client.add_alert_threshold(
                 &owner,
                 &portfolio,
-                &threshold(&env, MetricType::Custom, Comparison::Equal, 1, None),
+                &threshold(&env, MetricType::Custom, Comparison::Equal, 1, symbol_short!("ALL")),
             );
         }
         let res = client.try_add_alert_threshold(
             &owner,
             &portfolio,
-            &threshold(&env, MetricType::Custom, Comparison::Equal, 1, None),
+            &threshold(&env, MetricType::Custom, Comparison::Equal, 1, symbol_short!("ALL")),
         );
         assert_eq!(res, Err(Ok(RebalancingError::AlertThresholdLimitReached)));
     }
@@ -284,7 +284,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 111,
-                None,
+                symbol_short!("ALL"),
             ),
         );
         client.add_alert_threshold(
@@ -295,7 +295,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 222,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -328,13 +328,13 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 100,
-                None,
+                symbol_short!("ALL"),
             ),
         );
         client.add_alert_threshold(
             &owner,
             &portfolio,
-            &threshold(&env, MetricType::Balance, Comparison::Below, 500, None),
+            &threshold(&env, MetricType::Balance, Comparison::Below, 500, symbol_short!("ALL")),
         );
 
         // Update index 0 to have a different trigger value.
@@ -343,7 +343,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             999,
-            None,
+            symbol_short!("ALL"),
         );
         let cfg = client.update_alert_threshold(&owner, &portfolio, &0, &new_t);
         assert_eq!(cfg.thresholds.len(), 2);
@@ -360,7 +360,7 @@ mod tests {
         let owner = Address::generate(&env);
         let portfolio = symbol_short!("port1");
 
-        let t = threshold(&env, MetricType::Custom, Comparison::Equal, 1, None);
+        let t = threshold(&env, MetricType::Custom, Comparison::Equal, 1, symbol_short!("ALL"));
         let res = client.try_update_alert_threshold(&owner, &portfolio, &0, &t);
         assert_eq!(res, Err(Ok(RebalancingError::AlertConfigNotFound)));
     }
@@ -374,7 +374,7 @@ mod tests {
         let portfolio = symbol_short!("port1");
 
         client.set_alert_config(&owner, &portfolio, &empty_config(&env, &portfolio, true));
-        let t = threshold(&env, MetricType::Custom, Comparison::Equal, 1, None);
+        let t = threshold(&env, MetricType::Custom, Comparison::Equal, 1, symbol_short!("ALL"));
         let res = client.try_update_alert_threshold(&owner, &portfolio, &5, &t);
         assert_eq!(res, Err(Ok(RebalancingError::AlertIndexOutOfRange)));
     }
@@ -411,7 +411,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 500,
-                None,
+                symbol_short!("ALL"),
             ),
         );
         assert_eq!(client.check_portfolio_alerts(&portfolio), 0);
@@ -422,7 +422,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             200,
-            None,
+            symbol_short!("ALL"),
         );
         client.update_alert_threshold(&owner, &portfolio, &0, &updated);
         assert_eq!(client.check_portfolio_alerts(&portfolio), 1);
@@ -462,7 +462,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 200,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(hist.len(), 1);
         let e = hist.get(0).unwrap();
         assert_eq!(e.metric, MetricType::PortfolioDrift);
-        assert_eq!(e.asset, None);
+        assert_eq!(e.asset, symbol_short!("ALL"));
         assert_eq!(e.observed_value, 300);
         assert_eq!(e.threshold_value, 200);
         assert_eq!(e.severity, AlertSeverity::Warning);
@@ -510,7 +510,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 400,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -550,7 +550,7 @@ mod tests {
                 MetricType::AssetDrift,
                 Comparison::Above,
                 300,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
             ),
         );
         client.add_alert_threshold(
@@ -561,7 +561,7 @@ mod tests {
                 MetricType::AssetDrift,
                 Comparison::Above,
                 300,
-                Some(symbol_short!("XLM")),
+                symbol_short!("XLM"),
             ),
         );
 
@@ -569,7 +569,7 @@ mod tests {
         assert_eq!(fired, 1);
         let e = client.get_alert_history(&portfolio).get(0).unwrap();
         assert_eq!(e.metric, MetricType::AssetDrift);
-        assert_eq!(e.asset, Some(symbol_short!("USDC")));
+        assert_eq!(e.asset, symbol_short!("USDC"));
         assert_eq!(e.observed_value, 400);
     }
 
@@ -594,12 +594,12 @@ mod tests {
                 MetricType::Balance,
                 Comparison::Below,
                 1_000,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
             ),
         );
 
         let mut extra = Vec::new(&env);
-        extra.push_back(obs(MetricType::Balance, Some(symbol_short!("USDC")), 500));
+        extra.push_back(obs(MetricType::Balance, symbol_short!("USDC"), 500));
 
         let fired = client.check_portfolio_alerts_with(&portfolio, &extra);
         assert_eq!(fired, 1);
@@ -625,16 +625,16 @@ mod tests {
                 MetricType::Yield,
                 Comparison::Below,
                 500,
-                Some(symbol_short!("XLM")),
+                symbol_short!("XLM"),
             ),
         );
 
         let mut extra = Vec::new(&env);
-        extra.push_back(obs(MetricType::Yield, Some(symbol_short!("XLM")), 300));
+        extra.push_back(obs(MetricType::Yield, symbol_short!("XLM"), 300));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &extra), 1);
 
         let mut healthy = Vec::new(&env);
-        healthy.push_back(obs(MetricType::Yield, Some(symbol_short!("XLM")), 800));
+        healthy.push_back(obs(MetricType::Yield, symbol_short!("XLM"), 800));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &healthy), 0);
     }
 
@@ -655,16 +655,16 @@ mod tests {
                 MetricType::Custom,
                 Comparison::Equal,
                 42,
-                Some(symbol_short!("FLAG")),
+                symbol_short!("FLAG"),
             ),
         );
 
         let mut miss = Vec::new(&env);
-        miss.push_back(obs(MetricType::Custom, Some(symbol_short!("FLAG")), 43));
+        miss.push_back(obs(MetricType::Custom, symbol_short!("FLAG"), 43));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &miss), 0);
 
         let mut hit = Vec::new(&env);
-        hit.push_back(obs(MetricType::Custom, Some(symbol_short!("FLAG")), 42));
+        hit.push_back(obs(MetricType::Custom, symbol_short!("FLAG"), 42));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &hit), 1);
     }
 
@@ -687,14 +687,14 @@ mod tests {
             &threshold_with_bounds(
                 &env,
                 MetricType::Balance,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
                 Some(1_000),
                 Some(10_000),
             ),
         );
 
         let mut extra = Vec::new(&env);
-        extra.push_back(obs(MetricType::Balance, Some(symbol_short!("USDC")), 500));
+        extra.push_back(obs(MetricType::Balance, symbol_short!("USDC"), 500));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &extra), 1);
     }
 
@@ -713,7 +713,7 @@ mod tests {
             &threshold_with_bounds(
                 &env,
                 MetricType::Balance,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
                 Some(1_000),
                 Some(10_000),
             ),
@@ -722,7 +722,7 @@ mod tests {
         let mut extra = Vec::new(&env);
         extra.push_back(obs(
             MetricType::Balance,
-            Some(symbol_short!("USDC")),
+            symbol_short!("USDC"),
             15_000,
         ));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &extra), 1);
@@ -743,14 +743,14 @@ mod tests {
             &threshold_with_bounds(
                 &env,
                 MetricType::Balance,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
                 Some(1_000),
                 Some(10_000),
             ),
         );
 
         let mut extra = Vec::new(&env);
-        extra.push_back(obs(MetricType::Balance, Some(symbol_short!("USDC")), 5_000));
+        extra.push_back(obs(MetricType::Balance, symbol_short!("USDC"), 5_000));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &extra), 0);
     }
 
@@ -769,7 +769,7 @@ mod tests {
             &threshold_with_bounds(
                 &env,
                 MetricType::Balance,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
                 Some(1_000),
                 Some(10_000),
             ),
@@ -777,14 +777,14 @@ mod tests {
 
         // Exactly at the lower bound — should NOT fire.
         let mut at_lower = Vec::new(&env);
-        at_lower.push_back(obs(MetricType::Balance, Some(symbol_short!("USDC")), 1_000));
+        at_lower.push_back(obs(MetricType::Balance, symbol_short!("USDC"), 1_000));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &at_lower), 0);
 
         // Exactly at the upper bound — should NOT fire.
         let mut at_upper = Vec::new(&env);
         at_upper.push_back(obs(
             MetricType::Balance,
-            Some(symbol_short!("USDC")),
+            symbol_short!("USDC"),
             10_000,
         ));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &at_upper), 0);
@@ -805,7 +805,7 @@ mod tests {
             &threshold_with_bounds(
                 &env,
                 MetricType::Yield,
-                Some(symbol_short!("XLM")),
+                symbol_short!("XLM"),
                 Some(500),
                 None,
             ),
@@ -813,12 +813,12 @@ mod tests {
 
         // Below lower bound — fires.
         let mut below = Vec::new(&env);
-        below.push_back(obs(MetricType::Yield, Some(symbol_short!("XLM")), 200));
+        below.push_back(obs(MetricType::Yield, symbol_short!("XLM"), 200));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &below), 1);
 
         // Above lower bound — does not fire.
         let mut above = Vec::new(&env);
-        above.push_back(obs(MetricType::Yield, Some(symbol_short!("XLM")), 800));
+        above.push_back(obs(MetricType::Yield, symbol_short!("XLM"), 800));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &above), 0);
     }
 
@@ -837,7 +837,7 @@ mod tests {
             &threshold_with_bounds(
                 &env,
                 MetricType::AssetDrift,
-                Some(symbol_short!("BTC")),
+                symbol_short!("BTC"),
                 None,
                 Some(200),
             ),
@@ -845,12 +845,12 @@ mod tests {
 
         // Above upper bound — fires.
         let mut above = Vec::new(&env);
-        above.push_back(obs(MetricType::AssetDrift, Some(symbol_short!("BTC")), 350));
+        above.push_back(obs(MetricType::AssetDrift, symbol_short!("BTC"), 350));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &above), 1);
 
         // Below upper bound — does not fire.
         let mut below = Vec::new(&env);
-        below.push_back(obs(MetricType::AssetDrift, Some(symbol_short!("BTC")), 100));
+        below.push_back(obs(MetricType::AssetDrift, symbol_short!("BTC"), 100));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &below), 0);
     }
 
@@ -869,7 +869,7 @@ mod tests {
         let mut t = threshold_with_bounds(
             &env,
             MetricType::Balance,
-            Some(symbol_short!("USDC")),
+            symbol_short!("USDC"),
             Some(100),
             Some(500),
         );
@@ -878,7 +878,7 @@ mod tests {
         client.add_alert_threshold(&owner, &portfolio, &t);
 
         let mut in_range = Vec::new(&env);
-        in_range.push_back(obs(MetricType::Balance, Some(symbol_short!("USDC")), 300));
+        in_range.push_back(obs(MetricType::Balance, symbol_short!("USDC"), 300));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &in_range), 0);
     }
 
@@ -916,7 +916,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 200,
-                None,
+                symbol_short!("ALL"),
                 AlertAction::EmergencyRebalance,
             ),
         );
@@ -943,13 +943,13 @@ mod tests {
                 MetricType::Balance,
                 Comparison::Below,
                 1_000,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
                 AlertAction::Notify,
             ),
         );
 
         let mut extra = Vec::new(&env);
-        extra.push_back(obs(MetricType::Balance, Some(symbol_short!("USDC")), 500));
+        extra.push_back(obs(MetricType::Balance, symbol_short!("USDC"), 500));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &extra), 1);
         let e = client.get_alert_history(&portfolio).get(0).unwrap();
         assert_eq!(e.action, AlertAction::Notify);
@@ -972,16 +972,16 @@ mod tests {
                 MetricType::Yield,
                 Comparison::Below,
                 100,
-                Some(symbol_short!("ETH")),
-                AlertAction::Custom(symbol_short!("STAKE_MORE")),
+                symbol_short!("ETH"),
+                AlertAction::Custom(symbol_short!("STK_MORE")),
             ),
         );
 
         let mut extra = Vec::new(&env);
-        extra.push_back(obs(MetricType::Yield, Some(symbol_short!("ETH")), 50));
+        extra.push_back(obs(MetricType::Yield, symbol_short!("ETH"), 50));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &extra), 1);
         let e = client.get_alert_history(&portfolio).get(0).unwrap();
-        assert_eq!(e.action, AlertAction::Custom(symbol_short!("STAKE_MORE")));
+        assert_eq!(e.action, AlertAction::Custom(symbol_short!("STK_MORE")));
     }
 
     #[test]
@@ -1014,7 +1014,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 200,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1057,7 +1057,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 100,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1095,7 +1095,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             100,
-            None,
+            symbol_short!("ALL"),
         );
         t.enabled = false;
         client.add_alert_threshold(&owner, &portfolio, &t);
@@ -1137,7 +1137,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 100,
-                None,
+                symbol_short!("ALL"),
             ),
         );
         client.check_portfolio_alerts(&portfolio);
@@ -1212,7 +1212,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 200,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1257,7 +1257,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 200,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1301,7 +1301,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 500,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1338,7 +1338,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             200,
-            None,
+            symbol_short!("ALL"),
         );
         t_info.severity = AlertSeverity::Info;
         client.add_alert_threshold(&owner, &portfolio, &t_info);
@@ -1348,7 +1348,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             250,
-            None,
+            symbol_short!("ALL"),
         );
         t_warn.severity = AlertSeverity::Warning;
         client.add_alert_threshold(&owner, &portfolio, &t_warn);
@@ -1358,7 +1358,7 @@ mod tests {
             MetricType::PortfolioDrift,
             Comparison::Above,
             100,
-            None,
+            symbol_short!("ALL"),
         );
         t_crit.severity = AlertSeverity::Critical;
         client.add_alert_threshold(&owner, &portfolio, &t_crit);
@@ -1404,7 +1404,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 200,
-                None,
+                symbol_short!("ALL"),
             ),
         );
         client.add_alert_threshold(
@@ -1415,7 +1415,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 250,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1463,7 +1463,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 200,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1476,12 +1476,12 @@ mod tests {
                 MetricType::Balance,
                 Comparison::Below,
                 1_000,
-                Some(symbol_short!("USDC")),
+                symbol_short!("USDC"),
             ),
         );
 
         let mut extra = Vec::new(&env);
-        extra.push_back(obs(MetricType::Balance, Some(symbol_short!("USDC")), 500));
+        extra.push_back(obs(MetricType::Balance, symbol_short!("USDC"), 500));
 
         let fired = client.check_portfolio_alerts_with(&portfolio, &extra);
         assert_eq!(fired, 2);
@@ -1506,7 +1506,7 @@ mod tests {
 
         client.set_alert_config(&owner, &portfolio, &empty_config(&env, &portfolio, true));
 
-        let t = threshold(&env, MetricType::Custom, Comparison::Equal, 1, None);
+        let t = threshold(&env, MetricType::Custom, Comparison::Equal, 1, symbol_short!("ALL"));
         let res = client.try_add_alert_threshold(&stranger, &portfolio, &t);
         assert_eq!(res, Err(Ok(RebalancingError::PermissionDenied)));
 
@@ -1552,7 +1552,7 @@ mod tests {
                 MetricType::PortfolioDrift,
                 Comparison::Above,
                 100,
-                None,
+                symbol_short!("ALL"),
             ),
         );
 
@@ -1577,7 +1577,7 @@ mod tests {
         client.add_alert_threshold(
             &owner,
             &portfolio,
-            &threshold(&env, MetricType::Balance, Comparison::Below, 1_000, None),
+            &threshold(&env, MetricType::Balance, Comparison::Below, 1_000, symbol_short!("ALL")),
         );
 
         // No observations supplied — threshold has no matching observation.
@@ -1602,16 +1602,16 @@ mod tests {
                 MetricType::Custom,
                 Comparison::Equal,
                 0,
-                Some(symbol_short!("ZERO")),
+                symbol_short!("ZERO"),
             ),
         );
 
         let mut hit = Vec::new(&env);
-        hit.push_back(obs(MetricType::Custom, Some(symbol_short!("ZERO")), 0));
+        hit.push_back(obs(MetricType::Custom, symbol_short!("ZERO"), 0));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &hit), 1);
 
         let mut miss = Vec::new(&env);
-        miss.push_back(obs(MetricType::Custom, Some(symbol_short!("ZERO")), 1));
+        miss.push_back(obs(MetricType::Custom, symbol_short!("ZERO"), 1));
         assert_eq!(client.check_portfolio_alerts_with(&portfolio, &miss), 0);
     }
 }

@@ -550,6 +550,7 @@ impl DriftEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::records::DriftPct;
     use soroban_sdk::{symbol_short, testutils::Address as _, Env, Map};
 
     fn weights(env: &Env, entries: &[(Symbol, u32)]) -> Map<Symbol, u32> {
@@ -979,7 +980,7 @@ mod tests {
 
         let result = DriftEngine::validate_rebalance_inputs(&env, &target, &current, 100);
         assert!(!result.valid);
-        assert!(result.issues.get(0).unwrap() == symbol_short!("bad_target"));
+        assert!(result.issues.get(0).unwrap() == symbol_short!("bad_tgt"));
     }
 
     #[test]
@@ -994,7 +995,7 @@ mod tests {
 
         let result = DriftEngine::validate_rebalance_inputs(&env, &target, &current, 20_000);
         assert!(!result.valid);
-        assert!(result.issues.get(0).unwrap() == symbol_short!("bad_thresh"));
+        assert!(result.issues.get(0).unwrap() == symbol_short!("bad_thr"));
     }
 
     #[test]
@@ -1089,7 +1090,7 @@ mod tests {
         let drift_before =
             DriftEngine::calculate_portfolio_drift(&env, &portfolio, &target, &current, 100);
         let drift_after = DriftEngine::calculate_portfolio_drift(
-            &env, &portfolio, &target, &target, 100, // target == current after rebalance
+            &env, &portfolio, &target, &current, 100, // target == current after rebalance
         );
 
         let record = DriftEngine::create_rebalance_record(
