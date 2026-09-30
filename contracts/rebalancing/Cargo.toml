@@ -10,6 +10,8 @@ license.workspace = true
 [dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 astraport-audit = { path = "../audit" }
+astraport-trade = { path = "../trade" }
+astraport-pricefeed = { path = "../pricefeed" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
