@@ -339,7 +339,7 @@ mod tests {
 
         let result = check_permission_detailed(&env, &portfolio, &manager, CAN_REBALANCE);
         assert!(result.granted);
-        assert_eq!(result.role, Some(Role::Manager));
+        assert_eq!(result.role, Role::Manager);
         assert!(!result.expired);
         assert_eq!(result.missing_permissions, 0);
     }
@@ -354,7 +354,7 @@ mod tests {
 
         let result = check_permission_detailed(&env, &portfolio, &viewer, CAN_REBALANCE);
         assert!(!result.granted);
-        assert_eq!(result.role, Some(Role::Viewer));
+        assert_eq!(result.role, Role::Viewer);
         assert_eq!(result.missing_permissions, CAN_REBALANCE);
     }
 
@@ -367,7 +367,7 @@ mod tests {
 
         let result = check_permission_detailed(&env, &portfolio, &stranger, CAN_VIEW);
         assert!(!result.granted);
-        assert_eq!(result.role, None);
+        assert_eq!(result.role, Role::Viewer);
         assert_eq!(result.held_permissions, 0);
     }
 

@@ -54,6 +54,16 @@ pub enum RebalancingError {
     AlertIndexOutOfRange = 13,
     /// The drift threshold is greater than 100%.
     InvalidDriftThreshold = 14,
+    /// Schedule is not yet due for execution.
+    ScheduleNotDue = 15,
+    /// Grace window has expired; keeper can no longer execute.
+    GraceWindowExpired = 16,
+    /// Keeper config not found for portfolio.
+    KeeperConfigNotFound = 17,
+    /// Minimum interval between executions not met.
+    MinIntervalNotMet = 18,
+    /// Maximum executions per window exceeded.
+    MaxExecutionsExceeded = 19,
 }
 
 #[contracttype]
@@ -143,6 +153,8 @@ pub enum DataKey {
     AuditSink,
     /// Portfolio owner address mapping: portfolio_id -> Address
     Owner(Symbol),
+    /// Keeper configuration: portfolio_id -> (grace_window_secs, keeper_reward_bps)
+    KeeperConfig(Symbol),
 }
 
 /// Event data for manual rebalance - includes drift summary via timestamp
@@ -174,6 +186,16 @@ pub struct RoleChangeEvent {
     pub role: Role,
     pub action: Symbol, // "grant" or "revoke"
     pub expires_at: u64,
+}
+
+/// Keeper configuration for a portfolio.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeeperConfig {
+    /// Grace window in seconds after next_execution during which keeper can execute.
+    pub grace_window_secs: u64,
+    /// Keeper reward in basis points (paid from fees or accrued as credit).
+    pub keeper_reward_bps: u32,
 }
 
 pub struct ScheduleValidator;
@@ -443,6 +465,173 @@ impl RebalancingContract {
         symbol_short!("ok")
     }
 
+    /// Set keeper configuration for a portfolio (owner/admin only).
+    pub fn set_keeper_config(
+        env: Env,
+        owner: Address,
+        portfolio_id: Symbol,
+        grace_window_secs: u64,
+        keeper_reward_bps: u32,
+    ) -> Result<Symbol, RebalancingError> {
+        Self::require_auth_or_rbac(
+            &env,
+            &owner,
+            &portfolio_id,
+            rbac::CAN_CONFIGURE,
+            &Symbol::new(&env, "set_keeper"),
+        )?;
+        let config = KeeperConfig {
+            grace_window_secs,
+            keeper_reward_bps,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::KeeperConfig(portfolio_id), &config);
+        Ok(symbol_short!("ok"))
+    }
+
+    /// Get keeper configuration for a portfolio.
+    pub fn get_keeper_config(env: Env, portfolio_id: Symbol) -> Option<KeeperConfig> {
+        let key = DataKey::KeeperConfig(portfolio_id);
+        env.storage().persistent().get(&key)
+    }
+
+    /// Keeper-executed rebalance: callable by anyone when schedule is due.
+    /// Bypasses RBAC when schedule is genuinely due (within grace window).
+    pub fn execute_rebalance_if_due(
+        env: Env,
+        caller: Address,
+        portfolio_id: Symbol,
+        strategy: multi_asset_rebalancer::ExecutionStrategy,
+        trade_engine: Address,
+        price_feed: Address,
+        total_portfolio_value: u128,
+    ) -> Result<(), RebalancingError> {
+        caller.require_auth();
+
+        // Get schedule
+        let schedule_key = DataKey::Schedule(portfolio_id.clone());
+        let mut schedule: RebalancingSchedule = env
+            .storage()
+            .persistent()
+            .get(&schedule_key)
+            .ok_or(RebalancingError::TargetAllocationNotFound)?;
+
+        let now = env.ledger().timestamp();
+
+        // Check if schedule is due
+        if now < schedule.next_execution {
+            return Err(RebalancingError::ScheduleNotDue);
+        }
+
+        // Get keeper config
+        let keeper_config: KeeperConfig = env
+            .storage()
+            .persistent()
+            .get(&DataKey::KeeperConfig(portfolio_id.clone()))
+            .ok_or(RebalancingError::KeeperConfigNotFound)?;
+
+        // Check grace window
+        let grace_deadline = schedule.next_execution + keeper_config.grace_window_secs;
+        if now > grace_deadline {
+            return Err(RebalancingError::GraceWindowExpired);
+        }
+
+        // Check minimum interval between executions (prevent spam)
+        if schedule.last_execution > 0 {
+            let interval_secs = interval_to_seconds(&schedule.interval);
+            let min_interval = interval_secs / 10; // At least 10% of interval between executions
+            if now - schedule.last_execution < min_interval {
+                return Err(RebalancingError::MinIntervalNotMet);
+            }
+        }
+
+        // Check max executions per window (e.g., max 3 per interval)
+        let history_key = DataKey::History(portfolio_id.clone());
+        let history: Vec<ExecutionHistoryRecord> = env
+            .storage()
+            .persistent()
+            .get(&history_key)
+            .unwrap_or_else(|| Vec::new(&env));
+        let interval_secs = interval_to_seconds(&schedule.interval);
+        let window_start = now - interval_secs;
+        let recent_executions = history.iter().filter(|r| r.timestamp >= window_start).count();
+        if recent_executions >= 3 {
+            return Err(RebalancingError::MaxExecutionsExceeded);
+        }
+
+        // Calculate rebalance plan
+        let result = Self::calculate_rebalance(&env, &portfolio_id)?;
+
+        // Execute via multi-asset rebalancer with keeper as caller
+        let rebalancer_id = env.register_contract(None, multi_asset_rebalancer::MultiAssetRebalancer);
+        let client = multi_asset_rebalancer::MultiAssetRebalancerClient::new(&env, &rebalancer_id);
+        client.rebalance(
+            &portfolio_id,
+            &strategy,
+            &result.adjustments,
+            &trade_engine,
+            &price_feed,
+            &total_portfolio_value,
+            &caller,
+        );
+
+        // Update schedule
+        schedule.last_execution = now;
+        schedule.next_execution = now + interval_to_seconds(&schedule.interval);
+        env.storage().persistent().set(&schedule_key, &schedule);
+
+        // Record execution history
+        Self::record_execution(
+            &env,
+            &portfolio_id,
+            symbol_short!("done"),
+            symbol_short!("keeper"),
+        );
+
+        // Emit SCHEDULE_EXECUTED event
+        let event_data = SchedRebalanceEventData {
+            portfolio_id: portfolio_id.clone(),
+            outcome: symbol_short!("done"),
+            timestamp: now,
+            details: symbol_short!("kpr_exec"),
+        };
+        env.events()
+            .publish((symbol_short!("SCH_EXEC"), portfolio_id.clone()), event_data);
+
+        // Audit logging
+        let cur = env
+            .storage()
+            .persistent()
+            .get::<DataKey, CurrentHoldings>(&DataKey::CurrentHoldings(portfolio_id.clone()));
+        let tgt = env
+            .storage()
+            .persistent()
+            .get::<DataKey, TargetAllocation>(&DataKey::Allocation(portfolio_id.clone()));
+        let mut before_map = Map::new(&env);
+        let mut after_map = Map::new(&env);
+        if let Some(h) = cur {
+            for (k, v) in h.allocations.iter() {
+                before_map.set(k, v);
+            }
+        }
+        if let Some(a) = tgt {
+            for (k, v) in a.allocations.iter() {
+                after_map.set(k, v);
+            }
+        }
+        Self::log_audit_if_configured(
+            &env,
+            &portfolio_id,
+            symbol_short!("done"),
+            "keeper_scheduled_rebalance",
+            &before_map,
+            &after_map,
+        );
+
+        Ok(())
+    }
+
     pub fn get_schedule(env: Env, portfolio_id: Symbol) -> Option<RebalancingSchedule> {
         let key = DataKey::Schedule(portfolio_id);
         env.storage().persistent().get(&key)
@@ -680,6 +869,9 @@ impl RebalancingContract {
         owner: Address,
         portfolio_id: Symbol,
         strategy: multi_asset_rebalancer::ExecutionStrategy,
+        trade_engine: Address,
+        price_feed: Address,
+        total_portfolio_value: u128,
     ) -> Result<(), RebalancingError> {
         Self::require_auth_or_rbac(
             &env,
@@ -692,7 +884,15 @@ impl RebalancingContract {
         let rebalancer_id =
             env.register_contract(None, multi_asset_rebalancer::MultiAssetRebalancer);
         let client = multi_asset_rebalancer::MultiAssetRebalancerClient::new(&env, &rebalancer_id);
-        client.rebalance(&portfolio_id, &strategy, &result.adjustments);
+        client.rebalance(
+            &portfolio_id,
+            &strategy,
+            &result.adjustments,
+            &trade_engine,
+            &price_feed,
+            &total_portfolio_value,
+            &owner,
+        );
         Self::record_execution(
             &env,
             &portfolio_id,
@@ -706,12 +906,22 @@ impl RebalancingContract {
         env: Env,
         portfolio_id: Symbol,
         strategy: multi_asset_rebalancer::ExecutionStrategy,
+        trade_engine: Address,
+        price_feed: Address,
+        total_portfolio_value: u128,
     ) -> Result<multi_asset_rebalancer::SimulationResult, RebalancingError> {
         let result = Self::calculate_rebalance(&env, &portfolio_id)?;
         let rebalancer_id =
             env.register_contract(None, multi_asset_rebalancer::MultiAssetRebalancer);
         let client = multi_asset_rebalancer::MultiAssetRebalancerClient::new(&env, &rebalancer_id);
-        Ok(client.simulate_rebalance(&portfolio_id, &strategy, &result.adjustments))
+        Ok(client.simulate_rebalance(
+            &portfolio_id,
+            &strategy,
+            &result.adjustments,
+            &trade_engine,
+            &price_feed,
+            &total_portfolio_value,
+        ))
     }
 
     // -------------------------------------------------------------------

@@ -253,7 +253,7 @@ pub struct PermissionCheckResult {
     pub required_permission: u32,
     /// Missing permission bits (0 if granted).
     pub missing_permissions: u32,
-    /// The role of the actor, if any.
+    /// The role of the actor (Role::Viewer if no role assigned).
     pub role: Role,
     /// Whether a role is assigned.
     pub has_role: bool,
