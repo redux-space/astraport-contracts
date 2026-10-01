@@ -506,13 +506,11 @@ fn evaluate_badges(env: &Env, user: &Address, stats: &PlayerStats) -> soroban_sd
         (symbol_short!("COM_1"), stats.community_actions >= 1),
         (
             symbol_short!("BRZ_TIR"),
-            stats.tier == ProgressionTier::Bronze && stats.total_score >= TIER_SILVER - 1,
+            stats.tier == ProgressionTier::Bronze && stats.total_score < TIER_SILVER,
         ),
         (
             symbol_short!("SLV_TIR"),
-            stats.tier == ProgressionTier::Silver
-                || stats.tier == ProgressionTier::Gold
-                || stats.tier == ProgressionTier::Platinum,
+            stats.tier == ProgressionTier::Silver,
         ),
         (
             symbol_short!("GLD_TIR"),
@@ -1629,6 +1627,7 @@ fn find_badge_reward(defs: &soroban_sdk::Vec<BadgeDefinition>, badge_id: &Symbol
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     // --- Scoring Tests ---
 
@@ -1738,5 +1737,59 @@ mod tests {
         assert!(ProgressionTier::Silver < ProgressionTier::Gold);
         assert!(ProgressionTier::Gold < ProgressionTier::Platinum);
         assert!(ProgressionTier::Platinum > ProgressionTier::Bronze);
+    }
+
+    #[test]
+    fn test_tier_badge_conditions() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, GamificationEngine);
+        let user = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let mut stats = PlayerStats {
+                user: user.clone(),
+                trade_count: 0,
+                successful_trades: 0,
+                best_roi_bps: 0,
+                current_streak: 0,
+                best_streak: 0,
+                modules_completed: 0,
+                total_modules: 0,
+                community_actions: 0,
+                challenges_won: 0,
+                tier: ProgressionTier::Bronze,
+                total_score: 10,
+                last_active: 0,
+            };
+
+            // Bronze tier with score < TIER_SILVER earns BRZ_TIR but not SLV_TIR
+            let badges = evaluate_badges(&env, &user, &stats);
+            assert!(badges.contains(symbol_short!("BRZ_TIR")));
+            assert!(!badges.contains(symbol_short!("SLV_TIR")));
+
+            // Silver tier earns SLV_TIR but not BRZ_TIR
+            stats.tier = ProgressionTier::Silver;
+            stats.total_score = 30;
+            let badges = evaluate_badges(&env, &user, &stats);
+            assert!(!badges.contains(symbol_short!("BRZ_TIR")));
+            assert!(badges.contains(symbol_short!("SLV_TIR")));
+
+            // Gold tier earns GLD_TIR, not BRZ_TIR or SLV_TIR
+            stats.tier = ProgressionTier::Gold;
+            stats.total_score = 60;
+            let badges = evaluate_badges(&env, &user, &stats);
+            assert!(!badges.contains(symbol_short!("BRZ_TIR")));
+            assert!(!badges.contains(symbol_short!("SLV_TIR")));
+            assert!(badges.contains(symbol_short!("GLD_TIR")));
+
+            // Platinum tier earns PLT_TIR and GLD_TIR, not BRZ_TIR or SLV_TIR
+            stats.tier = ProgressionTier::Platinum;
+            stats.total_score = 85;
+            let badges = evaluate_badges(&env, &user, &stats);
+            assert!(!badges.contains(symbol_short!("BRZ_TIR")));
+            assert!(!badges.contains(symbol_short!("SLV_TIR")));
+            assert!(badges.contains(symbol_short!("GLD_TIR")));
+            assert!(badges.contains(symbol_short!("PLT_TIR")));
+        });
     }
 }
