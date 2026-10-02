@@ -15,20 +15,11 @@ pub const BPS_DENOM: i128 = 10_000;
 /// Maximum number of outcomes per market.
 pub const MAX_OUTCOMES_PER_MARKET: u32 = 10;
 
-/// Maximum number of active markets (design target: 1M+ but capped at Vec limits for scalability).
-pub const MAX_ACTIVE_MARKETS: u32 = 10_000;
-
-/// Default trading fee in basis points (0.3%).
-pub const DEFAULT_TRADING_FEE_BPS: i128 = 30;
-
 /// Minimum liquidity for a market to be tradable.
 pub const MIN_LIQUIDITY: i128 = 1_000; // In collateral units (USDC)
 
 /// Dispute period in seconds (24 hours).
 pub const DISPUTE_PERIOD_SECS: u64 = 86_400;
-
-/// LP token scaling factor for fee distribution.
-pub const LP_FEE_SCALE: i128 = 1_000_000;
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -161,8 +152,6 @@ pub enum PredictionDataKey {
     MarketList,
     /// Outcome token balances: (market_id, user, outcome_index).
     OutcomeBalance(u64, Address, u32),
-    /// Collateral (USDC) balances: (user).
-    CollateralBalance(Address),
     /// CPMM pool for a market: (market_id).
     LiquidityPool(u64),
     /// LP token balances: (market_id, user).
@@ -185,14 +174,10 @@ pub enum PredictionDataKey {
     ResolutionData(u64),
     /// Dispute for a market: (market_id).
     Dispute(u64),
-    /// User's total deposited collateral: (user).
-    TotalDeposited(Address),
     /// Market trading volume: (market_id).
     TradingVolume(u64),
     /// Markets by category.
     MarketsByCategory(MarketCategory),
-    /// Total fees collected per market: (market_id).
-    TotalFeesCollected(u64),
 }
 
 // ---------------------------------------------------------------------------
